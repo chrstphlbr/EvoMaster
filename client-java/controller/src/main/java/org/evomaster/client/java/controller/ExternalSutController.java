@@ -1,24 +1,23 @@
 package org.evomaster.client.java.controller;
 
+import javassist.Loader;
 import org.evomaster.client.java.controller.api.dto.ActionDto;
 import org.evomaster.client.java.controller.api.dto.BootTimeInfoDto;
 import org.evomaster.client.java.controller.api.dto.UnitsInfoDto;
-import org.evomaster.client.java.instrumentation.*;
-import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
-import org.evomaster.client.java.utils.SimpleLogger;
 import org.evomaster.client.java.controller.internal.SutController;
+import org.evomaster.client.java.instrumentation.Action;
+import org.evomaster.client.java.instrumentation.AdditionalInfo;
+import org.evomaster.client.java.instrumentation.InputProperties;
+import org.evomaster.client.java.instrumentation.TargetInfo;
 import org.evomaster.client.java.instrumentation.external.JarAgentLocator;
 import org.evomaster.client.java.instrumentation.external.ServerController;
+import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
+import org.evomaster.client.java.utils.SimpleLogger;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -51,6 +50,8 @@ public abstract class ExternalSutController extends SutController {
      */
     private volatile String javaCommand = "java";
 
+    private volatile boolean jaCoCoToFile = false;
+
     /**
      * Path on filesystem of where JaCoCo Agent jar file is located
      */
@@ -67,16 +68,66 @@ public abstract class ExternalSutController extends SutController {
     private volatile String jaCoCoOutputFile = "";
 
     /**
+     * Inclusions for JaCoCo
+     * If set to null, no inclusions are applied -> everything is included
+     */
+    private volatile String jaCoCoInclusions = null;
+
+    /**
      * Port of JaCoCo agent server
      */
     private volatile int jaCoCoPort = 0;
 
-    public final ExternalSutController setJaCoCo(String jaCoCoAgentLocation, String jaCoCoCliLocation, String jaCoCoOutputFile, int port){
+
+    /**
+     * Seconds to wait for JaCoCo dump to finish
+     */
+    private volatile int jaCoCoDumpWait = 5;
+
+    /**
+     * Directory to dump loaded classes, e.g., as required for the analysis (JaCoCo report)
+     */
+    private volatile String jaCoCoClassDumpDir = null;
+
+    public final ExternalSutController setJaCoCo(String jaCoCoAgentLocation, String jaCoCoCliLocation, String jaCoCoOutputFile, String inclusions, String classDumpDir, int port, int dumpWait){
         this.jaCoCoAgentLocation = jaCoCoAgentLocation;
         this.jaCoCoCliLocation = jaCoCoCliLocation;
         this.jaCoCoOutputFile = jaCoCoOutputFile;
         this.jaCoCoPort = port;
+        this.jaCoCoToFile = false;
+
+        if (dumpWait > 0) {
+            this.jaCoCoDumpWait = dumpWait;
+        }
+
+        setJaCoCoInclusions(inclusions);
+        setJaCoCoClassDumpDir(classDumpDir);
+
         return this;
+    }
+
+    public final ExternalSutController setJaCoCoFile(String jaCoCoAgentLocation, String jaCoCoCliLocation, String jaCoCoOutputFile, String inclusions, String classDumpDir){
+        this.jaCoCoAgentLocation = jaCoCoAgentLocation;
+        this.jaCoCoCliLocation = jaCoCoCliLocation;
+        this.jaCoCoOutputFile = jaCoCoOutputFile;
+        this.jaCoCoToFile = true;
+
+        setJaCoCoInclusions(inclusions);
+        setJaCoCoClassDumpDir(classDumpDir);
+
+        return this;
+    }
+
+    private void setJaCoCoInclusions(String inclusions) {
+        if (inclusions != null) {
+            this.jaCoCoInclusions = inclusions;
+        }
+    }
+
+    private void setJaCoCoClassDumpDir(String classDumpDir) {
+        if (classDumpDir != null) {
+            this.jaCoCoClassDumpDir = classDumpDir;
+        }
     }
 
     public int getWaitingSecondsForIncomingConnection() {
@@ -193,6 +244,29 @@ public abstract class ExternalSutController extends SutController {
         command.add(javaCommand);
 
 
+        if(isUsingJaCoCo()){
+            String jaCoCoCommand = "";
+
+            if (jaCoCoToFile) {
+                //file
+                jaCoCoCommand = "-javaagent:"+jaCoCoAgentLocation+"=destfile="+jaCoCoOutputFile+",append=false,dumponexit=true";
+            } else {
+                //tcpserver
+                jaCoCoCommand = "-javaagent:"+ jaCoCoAgentLocation +"=output=tcpserver,port="+jaCoCoPort+",append=false,dumponexit=true";
+            }
+
+            if (jaCoCoInclusions != null) {
+                jaCoCoCommand = jaCoCoCommand + ",includes=" + jaCoCoInclusions;
+            }
+
+            if (jaCoCoClassDumpDir != null) {
+                jaCoCoCommand = jaCoCoCommand + ",classdumpdir=" + jaCoCoClassDumpDir;
+            }
+
+            command.add(jaCoCoCommand);
+        }
+
+
         if (instrumentation) {
             if (serverController == null) {
                 serverController = new ServerController();
@@ -227,12 +301,6 @@ public abstract class ExternalSutController extends SutController {
         }
         if (command.stream().noneMatch(s -> s.startsWith("-Xms"))) {
             command.add("-Xms1G");
-        }
-
-        if(isUsingJaCoCo()){
-            //command.add("-javaagent:"+jaCoCoLocation+"=destfile="+jaCoCoOutputFile+",append=false,dumponexit=true");
-            command.add("-javaagent:"+ jaCoCoAgentLocation +"=output=tcpserver,port="+jaCoCoPort+",append=false,dumponexit=true");
-            //tcpserver
         }
 
         command.add("-jar");
@@ -466,7 +534,7 @@ public abstract class ExternalSutController extends SutController {
         }
 
         if (process != null) {
-            if(isUsingJaCoCo()){
+            if(isUsingJaCoCo() && !jaCoCoToFile){
                 dumpJaCoCo();
                 //attemptGracefulShutdown(process);
             }
@@ -490,7 +558,7 @@ public abstract class ExternalSutController extends SutController {
             Process dump = Runtime.getRuntime().exec(new String[]{
                     "java", "-jar", jaCoCoCliLocation, "dump", "--destfile", jaCoCoOutputFile, "--port", ""+jaCoCoPort});
 
-            dump.waitFor(5, TimeUnit.SECONDS);
+            dump.waitFor(jaCoCoDumpWait, TimeUnit.SECONDS);
             if(dump.exitValue() > 0){
                 SimpleLogger.error("Failed to dump JaCoCo report");
             }
