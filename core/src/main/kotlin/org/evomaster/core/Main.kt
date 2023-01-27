@@ -19,7 +19,10 @@ import org.evomaster.core.problem.graphql.GraphQLIndividual
 import org.evomaster.core.problem.graphql.service.GraphQLBlackBoxModule
 import org.evomaster.core.problem.graphql.service.GraphQLModule
 import org.evomaster.core.problem.rest.RestIndividual
-import org.evomaster.core.problem.rest.service.*
+import org.evomaster.core.problem.rest.service.BlackBoxRestModule
+import org.evomaster.core.problem.rest.service.ResourceDepManageService
+import org.evomaster.core.problem.rest.service.ResourceRestModule
+import org.evomaster.core.problem.rest.service.RestModule
 import org.evomaster.core.problem.rpc.RPCIndividual
 import org.evomaster.core.problem.rpc.service.RPCModule
 import org.evomaster.core.problem.web.service.WebModule
@@ -417,9 +420,9 @@ class Main {
         fun run(injector: Injector, controllerInfo: ControllerInfoDto?): Solution<*> {
 
             val config = injector.getInstance(EMConfig::class.java)
+            val rc = injector.getInstance(RemoteController::class.java)
 
             if (!config.blackBox || config.bbExperiments) {
-                val rc = injector.getInstance(RemoteController::class.java)
                 rc.startANewSearch()
             }
 
@@ -434,10 +437,16 @@ class Main {
 
             LoggingUtil.getInfoLogger().info("Starting to generate test cases")
 
-            return imp.search { solution: Solution<*>,
-                                snapshotTimestamp: String ->
+            val solutions = imp.search { solution: Solution<*>,
+                                         snapshotTimestamp: String ->
                 writeTestsAsSnapshots(injector, solution, controllerInfo, snapshotTimestamp)
             }
+
+            LoggingUtil.getInfoLogger().info("Finished generating test cases")
+
+            rc.resetSUT()
+
+            return solutions
         }
 
         private fun checkExperimentalSettings(injector: Injector) {
