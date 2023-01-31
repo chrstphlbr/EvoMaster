@@ -15,6 +15,18 @@
         </encoder>
     </appender>
 
+    <appender name="LOG_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>test_cases.txt</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>log.%d{yyyy-MM-dd}.%i.txt</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <!-- Avoid annoying and pointless WARN messages from Governator -->
     <logger name="com.netflix.governator.lifecycle.ClasspathScanner" level="ERROR" />
 
@@ -27,5 +39,8 @@
         <appender-ref ref="INFO_STDOUT" />
     </logger>
 
+    <logger name="test_cases" level="info" additivity="false">
+        <appender-ref ref="LOG_FILE" />
+    </logger>
 
 </configuration>

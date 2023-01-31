@@ -24,7 +24,7 @@ abstract class TestCaseWriter {
      * at each new generated variable
      */
     protected var counter = 0
-
+    protected var testNumber = 0
     protected val format : OutputFormat
         get(){ return config.outputFormat}
 
@@ -39,8 +39,11 @@ abstract class TestCaseWriter {
             test: TestCase,
             baseUrlOfSut: String
     ): Lines {
+        val logger = LoggerFactory.getLogger("test_cases")
 
         counter = 0
+
+        testNumber = testNumber + 1
 
         val lines = Lines()
 
@@ -85,6 +88,7 @@ abstract class TestCaseWriter {
         if (format.isJavaScript()) {
             lines.append(");")
         }
+        logger.info("Test case nr. ${testNumber} in CaseWriter.kt file: ${lines}")
         return lines
     }
 
