@@ -46,7 +46,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     override var evaluatedResult: EvaluatedMutation? = null
 
     override var tracking: TrackingHistory<out Traceable>? = null
-
+    var testNumber = 0
     companion object{
         const val ONLY_TRACKING_INDIVIDUAL_OF_EVALUATED = "ONLY_TRACKING_INDIVIDUAL_OF_EVALUATED"
         const val WITH_TRACK_WITH_CLONE_IMPACT = "WITH_TRACK_WITH_CLONE_IMPACT"
@@ -132,16 +132,19 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
      * the total number of actions
      */
     fun evaluatedActions() : List<EvaluatedAction>{
-
+        val logger = LoggerFactory.getLogger("test_cases")
         val list: MutableList<EvaluatedAction> = mutableListOf()
-
+        testNumber = testNumber + 1
         val actions = individual.seeActions()
         val actionResults = seeResults(actions)
 
         (0 until actionResults.size).forEach { i ->
-            list.add(EvaluatedAction(actions[i], actionResults[i]))
-        }
+            val evaluatedAction = EvaluatedAction(actions[i], actionResults[i])
+            logger.info("Action $testNumber: ${actions[i]}, Result: ${actionResults[i]}")
+            list.add(evaluatedAction)
 
+            // list.add(EvaluatedAction(actions[i], actionResults[i]))
+        }
         return list
     }
 
@@ -178,6 +181,16 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 }
             )
         }
+        // list.forEach { pair ->
+            //    val restActions = pair.second
+
+            //    restActions.forEach { action ->
+            //    testNumber = testNumber + 1
+            //    val result = action.result
+            //    logger.info("Rest Action $testNumber: ${action.action}, Result: ${if (result is RestCallResult) result.toString() else result}")
+            // }
+
+        // }
         return list
     }
 
