@@ -65,12 +65,8 @@ class RestCallResult : HttpWsCallResult {
     override fun toString(): String {
         val statusCode = (this as HttpWsCallResult).getStatusCode()
         val bodyParams = (this as HttpWsCallResult).getBody()
-        val bodyType = (this as HttpWsCallResult).getBodyType()
-        val bodyTypeString = bodyType.toString()
-        return "RestCallResult(statusCode=${statusCode}, \n" +
-                " resourceId=${getResourceIdName()}, \n" +
-                " bodyParams=${bodyParams}, \n" +
-                " getBodyType=${bodyTypeString})"
+        return "Status Code=${statusCode}, \n" +
+                "bodyParamsResponse=${bodyParams}, \n"
     }
 
 

@@ -6,6 +6,7 @@ import org.evomaster.core.problem.httpws.service.auth.NoAuth
 import org.evomaster.core.problem.rest.param.BodyParam
 import org.evomaster.core.problem.rest.param.FormParam
 import org.evomaster.core.problem.api.service.param.Param
+import org.evomaster.core.problem.httpws.service.HttpWsCallResult
 import org.evomaster.core.problem.rest.param.PathParam
 import org.evomaster.core.problem.rest.resource.ActionRToken
 import org.evomaster.core.problem.util.ParamUtil
@@ -209,4 +210,25 @@ class RestCallAction(
         BindingBuilder.bindParamsInRestAction(this)
 
     }
+
+
+    fun getFormattedParameters(): List<String> {
+        val formatted = mutableListOf<String>()
+        for (p in parameters) {
+            if (p is BodyParam) {
+                formatted.add(p.gene.getValueAsRawString())
+                formatted.add(p.contenTypeGene.getValueAsRawString())
+            } else {
+                formatted.add(p.gene.getValueAsRawString())
+            }
+        }
+        return formatted
+    }
+
+
+
+
+
+
+
 }

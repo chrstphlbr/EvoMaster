@@ -46,7 +46,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     override var evaluatedResult: EvaluatedMutation? = null
 
     override var tracking: TrackingHistory<out Traceable>? = null
-    var testNumber = 0
     companion object{
         const val ONLY_TRACKING_INDIVIDUAL_OF_EVALUATED = "ONLY_TRACKING_INDIVIDUAL_OF_EVALUATED"
         const val WITH_TRACK_WITH_CLONE_IMPACT = "WITH_TRACK_WITH_CLONE_IMPACT"
@@ -55,6 +54,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         const val ONLY_WITH_CLONE_IMPACT = "ONLY_WITH_CLONE_IMPACT"
 
         private val log: Logger = LoggerFactory.getLogger(EvaluatedIndividual::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
     }
 
     /**
@@ -83,16 +83,28 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
 
     constructor(fitness: FitnessValue, individual: T, results: List<out ActionResult>, trackOperator: TrackOperator? = null, index: Int = -1, config : EMConfig):
             this(fitness, individual, results,
-                    trackOperator = trackOperator,
-                    index = index,
-                    impactInfo = if ((config.isEnabledImpactCollection())){
-                        if(individual is RestIndividual && config.isEnabledResourceDependency())
-                            ResourceImpactOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
-                        else
-                            ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
+                trackOperator = trackOperator,
+                index = index,
+                impactInfo = if ((config.isEnabledImpactCollection())){
+                    if(individual is RestIndividual && config.isEnabledResourceDependency()) {
+                        val actions = individual.seeActions()
+
+                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${results[i]}" }} \n  \n " +
+                                        "* Fitness Score: ${fitness.computeFitnessScore()}, \n" +
+                                        "* Fitness Value: ${fitness.size} \n" +
+                                        "* Covered targets: ${fitness.coveredTargets()} \n"
+                                )
+
+
+                        ResourceImpactOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
+                    } else {
+                        ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
                     }
-                    else
-                        null)
+                }
+                else {
+                    null
+                }
+            )
 
     fun copy(): EvaluatedIndividual<T> {
 
@@ -106,7 +118,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         ei.executionTimeMs = executionTimeMs
         ei.hasImprovement = hasImprovement
         ei.clusterAssignments.addAll(clusterAssignments)
-
         return ei
     }
 
@@ -132,15 +143,14 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
      * the total number of actions
      */
     fun evaluatedActions() : List<EvaluatedAction>{
-        val logger = LoggerFactory.getLogger("test_cases")
         val list: MutableList<EvaluatedAction> = mutableListOf()
-        testNumber = testNumber + 1
         val actions = individual.seeActions()
         val actionResults = seeResults(actions)
+       // logger.info("Individual size: ${individual.size()}, Action size: ${actions.size}, Distinct actions: ${uniqueActions.size} Result size: ${actionResults.size}")
 
         (0 until actionResults.size).forEach { i ->
             val evaluatedAction = EvaluatedAction(actions[i], actionResults[i])
-            logger.info("Action $testNumber: ${actions[i]}, Result: ${actionResults[i]}")
+        //    logger.info("Action $testNumber: ${actions[i]}, Result: ${actionResults[i]}")
             list.add(evaluatedAction)
 
             // list.add(EvaluatedAction(actions[i], actionResults[i]))
@@ -181,16 +191,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 }
             )
         }
-        // list.forEach { pair ->
-            //    val restActions = pair.second
-
-            //    restActions.forEach { action ->
-            //    testNumber = testNumber + 1
-            //    val result = action.result
-            //    logger.info("Rest Action $testNumber: ${action.action}, Result: ${if (result is RestCallResult) result.toString() else result}")
-            // }
-
-        // }
         return list
     }
 

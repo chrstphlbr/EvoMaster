@@ -46,6 +46,7 @@ abstract class FitnessFunction<T>  where T : Individual {
      * @return [null] if there were problems in calculating the coverage
      */
     fun calculateCoverage(individual: T, targets: Set<Int> = setOf()) : EvaluatedIndividual<T>?{
+        val logger = LoggerFactory.getLogger("test_cases")
 
         val a = individual.seeActions().filter { a -> a.shouldCountForFitnessEvaluations() }.count()
 
@@ -82,7 +83,9 @@ abstract class FitnessFunction<T>  where T : Individual {
 
         time.newActionEvaluation(maxOf(1, a))
         time.newIndividualEvaluation()
-
+        logger.info("##################################################################################################################")
+        logger.info("###########**** Individual size: ${individual.size()}, Execution time: ${ei?.executionTimeMs} ms\" ****###########")
+        logger.info("##################################################################################################################")
         return ei
     }
 
@@ -118,7 +121,8 @@ abstract class FitnessFunction<T>  where T : Individual {
      * @param targets indicates prioritized targets if there exists
      */
     open fun targetsToEvaluate(targets: Set<Int>, individual: T) : Set<Int>{
-        return targets.plus(archive.notCoveredTargets()).filter { !IdMapper.isLocal(it) }.toSet()
+        val targetsToEvaluate = targets.plus(archive.notCoveredTargets()).filter { !IdMapper.isLocal(it) }.toSet()
+        return targetsToEvaluate
     }
 
     private fun handleExecutionInfo(ei: EvaluatedIndividual<T>?) {
