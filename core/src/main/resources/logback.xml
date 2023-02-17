@@ -27,6 +27,19 @@
         </encoder>
     </appender>
 
+    <appender name="CSV_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>result_${new Date().time}.csv</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>result.%d{yyyy-MM-dd}.%i.csv</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+
     <!-- Avoid annoying and pointless WARN messages from Governator -->
     <logger name="com.netflix.governator.lifecycle.ClasspathScanner" level="ERROR" />
 
@@ -41,6 +54,10 @@
 
     <logger name="test_cases" level="info" additivity="false">
         <appender-ref ref="LOG_FILE" />
+    </logger>
+
+    <logger name="test_cases_csv" level="info" additivity="false">
+        <appender-ref ref="CSV_FILE" />
     </logger>
 
 </configuration>

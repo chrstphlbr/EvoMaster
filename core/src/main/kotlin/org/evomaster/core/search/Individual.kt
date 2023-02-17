@@ -71,7 +71,7 @@ abstract class Individual(override var trackOperator: TrackOperator? = null,
     /**
      * Return a view of all the Genes in this chromosome/individual
      */
-    abstract fun seeGenes(filter: GeneFilter = GeneFilter.ALL): List<out Gene>
+    abstract fun seeGenes(filter: GeneFilter = GeneFilter.ALL): List<Gene>
 
     /**
      * An estimation of the "size" of this individual.

@@ -126,7 +126,6 @@ class FitnessValue(
     fun reachedTargets() : Set<Int> = getViewOfData().filter { it.value.distance > 0.0 }.keys
 
     fun computeFitnessScore(): Double {
-
         return targets.values.map { h -> h.distance }.sum()
     }
 

@@ -217,7 +217,6 @@ class RestCallAction(
         for (p in parameters) {
             if (p is BodyParam) {
                 formatted.add(p.gene.getValueAsRawString())
-                formatted.add(p.contenTypeGene.getValueAsRawString())
             } else {
                 formatted.add(p.gene.getValueAsRawString())
             }
