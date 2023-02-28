@@ -84,8 +84,8 @@ abstract class FitnessFunction<T>  where T : Individual {
         time.newActionEvaluation(maxOf(1, a))
         time.newIndividualEvaluation()
         logger.info("##################################################################################################################")
-        logger.info("###########**** Individual size: ${individual.size()}, Execution time: ${ei?.executionTimeMs} ms\" ****###########")
-        logger.info("##################################################################################################################")
+    //    logger.info("###########**** Individual size: ${individual.size()}, Execution time: ${ei?.executionTimeMs} ms\" ****###########")
+    //    logger.info("##################################################################################################################")
         return ei
     }
 

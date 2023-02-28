@@ -90,7 +90,8 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 impactInfo = if ((config.isEnabledImpactCollection())){
                     if(individual is RestIndividual && config.isEnabledResourceDependency()) {
                         val actions = individual.seeActions()
-                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${results[i]}" }} \n  \n" +
+                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" + 
+                                "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${results[i]}" }} \n  \n" +
                                                 "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
                                                  "* Fitness Value: ${fitness.size} \n" +
                                                 "* Covered targets: ${fitness.coveredTargets()} \n"

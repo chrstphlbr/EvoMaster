@@ -140,7 +140,6 @@ class FitnessValue(
     }
 
     fun coveredTargets(prefix: String, idMapper: IdMapper) : Int{
-
         return targets.entries
                 .filter { it.value.distance == MAX_VALUE }
                 .filter { idMapper.getDescriptiveId(it.key).startsWith(prefix) }
@@ -653,5 +652,14 @@ class FitnessValue(
      */
     fun getTargetsByAction(actionIndex : Int) : Set<Int> {
         return targets.filterValues { it.actionIndex == actionIndex }.keys
+    }
+
+    fun getTargetsInfoByAction(actionIndex : Int) : String {
+        val targetValues = targets.filterValues { it.actionIndex == actionIndex }
+        val keys = targetValues.keys
+        val coveredTargets = targetValues.values.filter { t -> t.distance == MAX_VALUE }.count()
+        val fitness = targetValues.values.map { h -> h.distance }.sum()
+        return "Keys: $keys \n \n Action Covered Targets: $coveredTargets \n \n Action Fitness Score: $fitness"
+
     }
 }
