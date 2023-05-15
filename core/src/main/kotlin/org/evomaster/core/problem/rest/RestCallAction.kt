@@ -17,7 +17,8 @@ import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.OptionalGene
 import org.evomaster.core.search.service.Randomness
 import java.net.URLEncoder
-
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 class RestCallAction(
     /**

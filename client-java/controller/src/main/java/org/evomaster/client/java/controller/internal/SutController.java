@@ -53,7 +53,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
-
 /**
  * Abstract class used to connect to the EvoMaster process, and
  * that is responsible to start/stop/restart the tested application,
@@ -116,7 +115,6 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
     private ObjectMapper objectMapper;
 
     private int actionIndex = -1;
-
     /**
      * Start the controller as a RESTful server.
      * Use the setters of this class to change the default
@@ -684,6 +682,8 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
      */
     public final void executeAction(RPCActionDto dto, ActionResponseDto responseDto) {
         EndpointSchema endpointSchema = getEndpointSchema(dto);
+
+        dto.getClientName(dto);
         if (dto.responseVariable != null && dto.doGenerateTestScript){
             try{
                 responseDto.testScript = endpointSchema.newInvocationWithJava(dto.responseVariable, dto.controllerVariable,dto.clientVariable);
@@ -739,6 +739,7 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
     }
 
     private Object executeRPCEndpoint(RPCActionDto dto, boolean throwTargetException) throws Exception {
+        dto.getClientName(dto);
         Object client = ((RPCProblem)getProblemInfo()).getClient(dto.interfaceId);
         EndpointSchema endpointSchema = getEndpointSchema(dto);
         return executeRPCEndpointCatchTargetException(client, endpointSchema, throwTargetException);
@@ -768,6 +769,7 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
     public Object executeRPCEndpoint(String json) throws Exception{
         try {
             RPCActionDto dto = objectMapper.readValue(json, RPCActionDto.class);
+            dto.getClientName(dto);
             return executeRPCEndpoint(dto, true);
         } catch (JsonProcessingException e) {
             SimpleLogger.error("Failed to extract the json: " + e.getMessage());
@@ -782,10 +784,11 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
      */
     private final Object executeRPCEndpoint(Object client, EndpointSchema endpoint) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ClassNotFoundException {
         if (endpoint.getRequestParams().isEmpty()){
+            endpoint.getEndpoint(endpoint);
             Method method = client.getClass().getDeclaredMethod(endpoint.getName());
             return method.invoke(client);
         }
-
+        endpoint.getEndpoint(endpoint);
         Object[] params = new Object[endpoint.getRequestParams().size()];
         Class<?>[] types = new Class<?>[endpoint.getRequestParams().size()];
 
@@ -795,6 +798,7 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
                 NamedTypedValue param = endpoint.getRequestParams().get(i);
                 params[i] = param.newInstance();
                 types[i] = param.getType().getClazz();
+                endpoint.getEndpoint(endpoint);
             }
         } catch (Exception e){
             throw new RuntimeException("ERROR: fail to instance value of input parameters based on dto/schema, msg error:"+e.getMessage());
@@ -806,6 +810,7 @@ public abstract class SutController implements SutHandler, CustomizationHandler 
     }
 
     private EndpointSchema getEndpointSchema(RPCActionDto dto){
+        dto.getClientName(dto);
         InterfaceSchema interfaceSchema = rpcInterfaceSchema.get(dto.interfaceId);
         EndpointSchema endpointSchema = interfaceSchema.getOneEndpoint(dto).copyStructure();
         endpointSchema.setValue(dto);

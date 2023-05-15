@@ -90,13 +90,12 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 impactInfo = if ((config.isEnabledImpactCollection())){
                     if(individual is RestIndividual && config.isEnabledResourceDependency()) {
                         val actions = individual.seeActions()
-                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" + 
-                                "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${results[i]}" }} \n  \n" +
-                                                "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
-                                                 "* Fitness Value: ${fitness.size} \n" +
-                                                "* Covered targets: ${fitness.coveredTargets()} \n"
-                                       )
-
+                                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" +
+                                                 "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${if (i < results.size) results[i] else "No result available"}" }} \n  \n" +
+                                                                "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
+                                                              "* Fitness Value: ${fitness.size} \n" +
+                                                              "* Covered targets: ${fitness.coveredTargets()} \n"
+                                                   )
 
                         ResourceImpactOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
                     } else {
@@ -305,6 +304,8 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     }
 
     private fun verifyImpacts(){
+        val actions = individual.seeActions()
+        logger.info("individual ${actions.mapIndexed { i, action -> " \\n \\n Action nr. $i: $action " }}")
         impactInfo?.verifyActionGeneImpacts(individual.seeActions(NO_INIT))
     }
 
@@ -313,7 +314,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         val noImpactTargets = targetsInfo.filterValues { !it.isImpactful() }.keys
         val impactTargets = targetsInfo.filterValues {  it.isImpactful() }.keys
         val improvedTargets = targetsInfo.filterValues { it.isImproved() }.keys
-
+        logger.info("previous individual ${previous.individual}")
         val didStructureMutation = mutatedGenes.didStructureMutation()
         if (didStructureMutation){ // structure mutated
             updateImpactsAfterStructureMutation(next, previous.individual, mutatedGenes, noImpactTargets, impactTargets, improvedTargets)
@@ -448,6 +449,8 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
             // count impact of changing size of resource
             impactInfo.countResourceSizeImpact(previous as RestIndividual, current = next.individual as RestIndividual, noImpactTargets= noImpactTargets, impactTargets = impactTargets, improvedTargets = improvedTargets)
         }
+
+            logger.info("previous individual ${previous} next individual ${next?.individual}")
     }
 
 

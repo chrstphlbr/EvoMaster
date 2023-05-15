@@ -1576,7 +1576,7 @@ class EMConfig {
 
     @Experimental
     @Cfg("Whether to output executed sql info")
-    var outputExecutedSQL = OutputExecutedSQL.NONE
+    var outputExecutedSQL = OutputExecutedSQL.ONCE_EXECUTED
 
     enum class OutputExecutedSQL{
         /**

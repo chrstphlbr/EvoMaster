@@ -8,6 +8,9 @@ import org.evomaster.core.problem.httpws.service.auth.NoAuth
 import org.evomaster.core.problem.httpws.service.auth.*
 import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.search.Individual
+import org.evomaster.core.problem.rest.RestCallAction
+import org.evomaster.core.problem.rest.param.BodyParam
+import java.util.*
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -19,6 +22,8 @@ abstract class HttpWsSampler<T> : ApiWsSampler<T>() where T : Individual{
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(HttpWsSampler::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
+
     }
 
 
@@ -37,7 +42,25 @@ abstract class HttpWsSampler<T> : ApiWsSampler<T>() where T : Individual{
         val action = randomness.choose(actionCluster).copy() as HttpWsAction
         randomizeActionGenes(action)
         action.auth = getRandomAuth(noAuthP)
+    //    logger.info("check action.auth, ${action.auth}")
+        logger.info("check action, $action")
+    //    logger.info("check action.parameters, ${action.parameters}")
+    //    val actionCall = action as RestCallAction
+    //    logger.info("check actionCall, ${actionCall.getFormattedParameters().map { it.toString() }}")
+        logger.info("check generated parameters:, ${getFormattedParameters(action).map { it.toString() }}")
         return action
+    }
+
+    fun getFormattedParameters(action: HttpWsAction): List<String> {
+        val formatted = mutableListOf<String>()
+        for (p in action.parameters) {
+            if (p is BodyParam) {
+                formatted.add(p.gene.getValueAsRawString())
+            } else {
+                formatted.add(p.gene.getValueAsRawString())
+            }
+        }
+        return formatted
     }
 
     fun getRandomAuth(noAuthP: Double): HttpWsAuthenticationInfo {

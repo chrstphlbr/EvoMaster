@@ -22,6 +22,8 @@ import org.evomaster.client.java.instrumentation.shared.StringSpecializationInfo
 import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
 import org.evomaster.client.java.utils.SimpleLogger;
 import org.glassfish.jersey.internal.util.Producer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.*;
@@ -48,6 +50,7 @@ public class EMController {
      * WARNING: make sure to call this inside a noKillSwitch
      */
     private final SutController sutController;
+    private static final Logger logger = LoggerFactory.getLogger("test_cases");
 
     /**
      * Keep track of the ID of last executed SQL command.
@@ -178,6 +181,7 @@ public class EMController {
         try {
             dto.isSutRunning = noKillSwitch(() -> sutController.isSutRunning());
             dto.baseUrlOfSUT = baseUrlOfSUT;
+            logger.info("dto.baseUrlOfSUT", dto.baseUrlOfSUT);
             dto.infoForAuthentication = noKillSwitch(() -> sutController.getInfoForAuthentication());
             dto.sqlSchemaDto = noKillSwitch(() -> sutController.getSqlDatabaseSchema());
             dto.defaultOutputFormat = noKillSwitch(() -> sutController.getPreferredOutputFormat());
@@ -546,7 +550,10 @@ public class EMController {
             so need to handle such possibility here
          */
         Integer index = dto.index;
+        logger.info("index: {}", index);
         Integer current = sutController.getActionIndex();
+        logger.info("current index: {}", current);
+
         if (index == current) {
             SimpleLogger.warn("Repeated PUT on newAction for same index " + index);
         } else {

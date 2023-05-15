@@ -5,12 +5,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 /**
  * a dto to collect info of endpoints to be tested
  * that is used by both core (for identifying action) and driver (for endpoint invocation) sides
  */
 public class RPCActionDto {
+
+    private static final Logger logger = LoggerFactory.getLogger("test_cases");
 
     /**
      * name of the RPC interface
@@ -142,6 +145,16 @@ public class RPCActionDto {
         if (copy.relatedCustomization != null)
             copy.relatedCustomization = new HashSet<>(relatedCustomization);
         return copy;
+    }
+
+    public String getClientName(RPCActionDto dto) {
+        String clientName = dto.clientInfo;
+        if (dto != null){
+            logger.info("Extracted client name: {}", clientName);
+        }else {
+            logger.info("NO extracted client name");
+        }
+            return clientName;
     }
 
 }

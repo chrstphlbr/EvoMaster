@@ -19,7 +19,7 @@
         <file>test_cases.txt</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>log.%d{yyyy-MM-dd}.%i.txt</fileNamePattern>
-            <maxFileSize>10MB</maxFileSize>
+            <maxFileSize>1024MB</maxFileSize>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>

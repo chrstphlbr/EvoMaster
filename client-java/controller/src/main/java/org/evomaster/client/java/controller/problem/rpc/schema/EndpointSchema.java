@@ -5,6 +5,8 @@ import org.evomaster.client.java.controller.api.dto.problem.rpc.SeededRPCActionD
 import org.evomaster.client.java.controller.problem.rpc.CodeJavaGenerator;
 import org.evomaster.client.java.controller.problem.rpc.schema.params.NamedTypedValue;
 import org.evomaster.client.java.controller.problem.rpc.schema.types.PrimitiveOrWrapperType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -17,6 +19,8 @@ import java.util.stream.IntStream;
  * endpoint dto for RPC service
  */
 public class EndpointSchema {
+    private static final Logger logger = LoggerFactory.getLogger("test_cases");
+
     /**
      * name of the endpoint
      */
@@ -217,5 +221,15 @@ public class EndpointSchema {
 
         javaCode.add("}");
         return javaCode;
+    }
+
+    public String getEndpoint(EndpointSchema endpoint) {
+        String endpointName = endpoint.getName();
+        if (endpoint != null){
+            logger.info("ENDPOINT name: {}", endpointName);
+        }else {
+            logger.info("ENDPOINT name");
+        }
+        return endpointName;
     }
 }

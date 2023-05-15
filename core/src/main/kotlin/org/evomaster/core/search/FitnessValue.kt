@@ -129,6 +129,27 @@ class FitnessValue(
         return targets.values.map { h -> h.distance }.sum()
     }
 
+/*    fun computeFitnessScore(predictedStatusCodes: Map<String, Int>? = null): Double {
+        return if (predictedStatusCodes != null) {
+            targets.values.map { h ->
+                if (predictedStatusCodes.containsKey(h.targetId)) {
+                    val predicted = predictedStatusCodes[h.targetId]
+                    if (predicted != h.expectedStatusCode) {
+                        h.distance + 1.0 // penalty for wrong prediction
+                    } else {
+                        h.distance
+                    }
+                } else {
+                    h.distance
+                }
+            }.sum()
+        } else {
+            targets.values.map { h -> h.distance }.sum()
+        }
+    }*/
+
+
+
     fun computeFitnessScore(targetIds : List<Int>): Double {
 
         return targets.filterKeys { targetIds.contains(it)}.values.map { h -> h.distance }.sum()

@@ -45,6 +45,24 @@ class ExecutionInfoReporter {
         }
     }
 
+    fun getSqlExecutionInfo(actions: List<Action>, sqlExecutionInfo: Map<Int, DatabaseExecution>): String {
+        if (config.outputExecutedSQL == EMConfig.OutputExecutedSQL.NONE) return ""
+
+        val stringBuilder = StringBuilder()
+
+        if (!hasHeader && sqlExecutionInfo.values.any { it.executionInfo.isNotEmpty() }){
+            stringBuilder.append(getRowString(arrayOf("endpoint","sqlCommand","executionTime"))).append(System.lineSeparator())
+            hasHeader = true
+        }
+
+        sqlExecutionInfo.forEach { t, u ->
+            stringBuilder.append(getOneRow(actions.get(t).getName(), u, config.outputExecutedSQL == EMConfig.OutputExecutedSQL.ONCE_EXECUTED))
+        }
+
+        return stringBuilder.toString()
+    }
+
+
     /**
      * save all execution info at end of the search
      */

@@ -23,6 +23,7 @@ import javax.annotation.PostConstruct
 abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
     companion object {
         private val log: Logger = LoggerFactory.getLogger(AbstractRestSampler::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
     }
 
     @Inject(optional = true)
@@ -124,7 +125,10 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
 
     override fun getPreDefinedIndividuals() : List<RestIndividual>{
         val addCallAction = addCallToSwagger() ?: return listOf()
-        return listOf(createIndividual(mutableListOf(addCallAction)))
+        val individuals = listOf(createIndividual(mutableListOf(addCallAction)))
+        val actions = listOf(addCallAction)
+        logger.info("Created individuals: {}", individuals, "Actions: {}", actions)
+        return individuals
     }
 
     open fun getExcludedActions() : List<RestCallAction>{
@@ -139,6 +143,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
      */
     private fun addCallToSwagger() : RestCallAction?{
 
+
         val id =  "Call to Swagger"
 
         if (configuration.blackBox && !configuration.bbExperiments) {
@@ -149,6 +154,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
         }
 
         val base = infoDto.baseUrlOfSUT
+        logger.info("baseUrlOfSUT", infoDto?.baseUrlOfSUT)
         val openapi = infoDto.restProblem.openApiUrl
 
         if(openapi == null || !openapi.startsWith(base)){
@@ -221,7 +227,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
             TODO this would had been better handled with optional injection, but Guice seems pretty buggy :(
          */
         partialOracles.setupForRest(swagger)
-
+        logger.info("initForBlackBox")
         log.debug("Done initializing {}", AbstractRestSampler::class.simpleName)
     }
 
@@ -249,6 +255,12 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
      * @return a created individual with specified actions, i.e., [restCalls]
      */
     open fun createIndividual(restCalls: MutableList<RestCallAction>): RestIndividual {
+        val numberOfRestCalls = restCalls.size
+        logger.info("numberOfRestCalls", numberOfRestCalls)
+        for (restCall in restCalls) {
+            val formattedParams = restCall.getFormattedParameters()
+            logger.info("formattedParams", formattedParams)
+        }
         return RestIndividual(restCalls, SampleType.SMART, mutableListOf()//, usedObjects.copy()
                 ,trackOperator = if (config.trackingEnabled()) this else null, index = if (config.trackingEnabled()) time.evaluatedIndividuals else Traceable.DEFAULT_INDEX)
     }

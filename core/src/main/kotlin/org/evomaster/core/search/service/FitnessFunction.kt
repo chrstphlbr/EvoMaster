@@ -129,4 +129,13 @@ abstract class FitnessFunction<T>  where T : Individual {
         ei?:return
         executionInfoReporter.sqlExecutionInfo(ei.individual.seeActions(), ei.fitness.databaseExecutions)
     }
+
+    fun logExecutionInfo(ei: EvaluatedIndividual<T>?): String {
+        ei?:return ""
+        val actions = ei.individual.seeActions()
+        val sqlExecutionInfo = ei.fitness.databaseExecutions
+
+        return executionInfoReporter.getSqlExecutionInfo(actions, sqlExecutionInfo)
+    }
+
 }

@@ -34,8 +34,8 @@ class DateGene(
 
     companion object {
         val log: Logger = LoggerFactory.getLogger(DateGene::class.java)
-        const val MAX_YEAR = 2100
-        const val MIN_YEAR = 1900
+        const val MAX_YEAR = 2020
+        const val MIN_YEAR = 1993
         const val MAX_MONTH = 13
         const val MIN_MONTH = 0
         const val MAX_DAY = 32
