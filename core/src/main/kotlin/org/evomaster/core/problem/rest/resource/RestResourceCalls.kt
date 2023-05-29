@@ -30,8 +30,8 @@ import org.slf4j.LoggerFactory
 class RestResourceCalls(
     val template: CallsTemplate? = null,
     val node: RestResourceNode? = null,
-    private val actions: MutableList<RestCallAction>,
-    private val dbActions: MutableList<DbAction> = mutableListOf(),
+    val actions: MutableList<RestCallAction>,
+    val dbActions: MutableList<DbAction> = mutableListOf(),
     withBinding: Boolean = false
 ): StructuralElement(mutableListOf<StructuralElement>().apply { addAll(dbActions); addAll(actions) }){
 

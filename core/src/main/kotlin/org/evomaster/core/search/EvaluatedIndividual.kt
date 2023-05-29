@@ -305,7 +305,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
 
     private fun verifyImpacts(){
         val actions = individual.seeActions()
-        logger.info("individual ${actions.mapIndexed { i, action -> " \\n \\n Action nr. $i: $action " }}")
         impactInfo?.verifyActionGeneImpacts(individual.seeActions(NO_INIT))
     }
 
@@ -314,7 +313,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         val noImpactTargets = targetsInfo.filterValues { !it.isImpactful() }.keys
         val impactTargets = targetsInfo.filterValues {  it.isImpactful() }.keys
         val improvedTargets = targetsInfo.filterValues { it.isImproved() }.keys
-        logger.info("previous individual ${previous.individual}")
         val didStructureMutation = mutatedGenes.didStructureMutation()
         if (didStructureMutation){ // structure mutated
             updateImpactsAfterStructureMutation(next, previous.individual, mutatedGenes, noImpactTargets, impactTargets, improvedTargets)

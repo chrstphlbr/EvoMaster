@@ -25,6 +25,8 @@ class Archive<T> where T : Individual {
 
     companion object{
         private val log = LoggerFactory.getLogger(Archive::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
+
     }
 
     @Inject
@@ -305,7 +307,7 @@ class Archive<T> where T : Individual {
             As we can have 10s of thousands of covered targets,
             iterating over them is expensive
          */
-
+        logger.info("not covered targets: ${populations.keys.filter { !isCovered(it) }.toSet()}")
         return populations.keys.filter { !isCovered(it) }.toSet()
     }
 

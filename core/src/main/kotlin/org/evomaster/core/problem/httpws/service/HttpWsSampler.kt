@@ -43,11 +43,11 @@ abstract class HttpWsSampler<T> : ApiWsSampler<T>() where T : Individual{
         randomizeActionGenes(action)
         action.auth = getRandomAuth(noAuthP)
     //    logger.info("check action.auth, ${action.auth}")
-        logger.info("check action, $action")
+    //    logger.info("check action, $action")
     //    logger.info("check action.parameters, ${action.parameters}")
     //    val actionCall = action as RestCallAction
     //    logger.info("check actionCall, ${actionCall.getFormattedParameters().map { it.toString() }}")
-        logger.info("check generated parameters:, ${getFormattedParameters(action).map { it.toString() }}")
+    //    logger.info("check generated parameters:, ${getFormattedParameters(action).map { it.toString() }}")
         return action
     }
 
