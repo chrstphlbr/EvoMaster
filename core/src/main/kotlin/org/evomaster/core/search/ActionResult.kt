@@ -4,7 +4,8 @@ package org.evomaster.core.search
 open class ActionResult constructor(
         /** Specify whether the result of this action led to stop the evaluation
          * of the following actions*/
-        var stopping: Boolean = false) {
+        var stopping: Boolean = false,
+        var totalCounts: Map<String, Int> = emptyMap() ) {
 
     companion object{
         const val ERROR_MESSAGE = "ERROR_MESSAGE"

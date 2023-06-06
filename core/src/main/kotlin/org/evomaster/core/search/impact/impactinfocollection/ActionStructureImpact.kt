@@ -4,6 +4,10 @@ import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.FitnessValue
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.impact.impactinfocollection.value.numeric.IntegerGeneImpact
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+import org.evomaster.core.problem.rest.RestIndividual
+import java.text.DecimalFormat
 
 /**
  * This class is to collect impacts of structure mutation on action-based individual, e.g., remove/add action.
@@ -29,6 +33,8 @@ class ActionStructureImpact  (sharedImpactInfo: SharedImpactInfo, specificImpact
 
     companion object{
         const val ACTION_SEPARATOR = ";"
+        private val logger = LoggerFactory.getLogger("test_cases")
+        var newFitnessScore: Double = 0.0
     }
 
     /*
@@ -40,14 +46,54 @@ class ActionStructureImpact  (sharedImpactInfo: SharedImpactInfo, specificImpact
         val structureId = evaluatedIndividual.individual.seeActions().joinToString(ACTION_SEPARATOR){it.getName()}
         val impact = structures.getOrPut(structureId){ 0.0 }
         val fitness = evaluatedIndividual.fitness.computeFitnessScore()
+        logger.info("structureId 1: ${structureId}")
+        logger.info("fitnesss: ${fitness}")
+        logger.info("impact: ${impact}")
         if ( fitness > impact ) structures[structureId] = fitness
     }
 
     fun updateStructure(individual:Individual, fitnessValue: FitnessValue){
         val structureId = individual.seeActions().joinToString(ACTION_SEPARATOR){it.getName()}
         val impact = structures.getOrPut(structureId){ 0.0 }
-        val fitness = fitnessValue.computeFitnessScore()
+      //  val ff = newFitnessScore
+       val fitness = fitnessValue.computeFitnessScore()
+        logger.info("structureId 2: ${structureId}")
+      //  logger.info("fitnesss updated: ${fitness}")
+      //  structures[structureId] = ff
         if ( fitness > impact ) structures[structureId] = fitness
+        logger.info("impact: ${impact} :: fitness score: $fitness , structures: ${structures[structureId]}")
+
+    }
+
+    fun updateFitnessScore(individual: RestIndividual, fitnessValue: FitnessValue, totalCounts: Map<String, Int>? = null): Double {
+        val structureId = individual.seeActions().joinToString(ACTION_SEPARATOR){it.getName()}
+       // val impact = structures.getOrPut(structureId){ 0.0 }
+       // logger.info("impact @:", impact)
+        logger.info("structureId updateFitnessScore: ${structureId}")
+        var newFitness = 0.0
+        var totalHits = 0
+        if (totalCounts?.isNotEmpty() == true) {
+            for ((resultType, count) in totalCounts?.entries ?: emptySet()) {
+                if (resultType != "invokedRules") {
+                    totalHits += count.toInt()
+                }
+            }
+        }
+        var individualSize = individual.seeActions().size
+        var invokedRules = totalCounts?.get("invokedRules")
+        logger.info("individual s: ${individual.seeActions().size}, fv: $fitnessValue totalCounts: $totalCounts, totalHits: $totalHits, invokedRules: $invokedRules")
+        val fitness = fitnessValue.computeDefaultFitnessScore()
+        logger.info("defaultFitness: ${fitness}")
+        newFitness = fitnessValue.computeNewFitnessScore(fitness, individualSize, totalHits, invokedRules)
+        val roundedValue = DecimalFormat("#.##").format(newFitness).toDouble()
+        structures[structureId] = roundedValue
+        logger.info("roundedValue @: $roundedValue")
+        logger.info("structures[structureId] @: ${structures[structureId]}")
+        newFitnessScore = roundedValue
+
+        return newFitnessScore
+       // if ( newFitness > impact ) structures[structureId] = newFitness
+       // logger.info("fitness >:", newFitness)
     }
 
     fun countImpact(evaluatedIndividual : EvaluatedIndividual<*>, sizeChanged : Boolean, noImpactTargets: Set<Int>, impactTargets : Set<Int>, improvedTargets : Set<Int>, onlyManipulation : Boolean = false){

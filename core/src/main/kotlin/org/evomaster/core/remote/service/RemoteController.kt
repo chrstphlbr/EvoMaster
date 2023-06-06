@@ -36,7 +36,6 @@ class RemoteController() : DatabaseExecutor {
 
     companion object {
         val log: Logger = LoggerFactory.getLogger(RemoteController::class.java)
-        private val logger = LoggerFactory.getLogger("test_cases")
     }
 
     lateinit var host: String
@@ -86,7 +85,6 @@ class RemoteController() : DatabaseExecutor {
     }
 
     private fun makeHttpCall(lambda:  () -> Response) : Response{
-        logger.info("makeHttpCall", lambda)
         return  try{
             lambda.invoke()
         } catch (e: ProcessingException){
@@ -191,7 +189,6 @@ class RemoteController() : DatabaseExecutor {
 
 
     fun getSutInfo(): SutInfoDto? {
-        logger.info("get sut info")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.INFO_SUT_PATH)
@@ -210,7 +207,6 @@ class RemoteController() : DatabaseExecutor {
 
 
     fun getControllerInfo(): ControllerInfoDto? {
-        logger.info("get controller info")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.CONTROLLER_INFO)
@@ -229,7 +225,6 @@ class RemoteController() : DatabaseExecutor {
     }
 
     private fun changeState(run: Boolean, reset: Boolean): Boolean {
-        logger.info("change state")
         val response = try {
             makeHttpCall {
                 getWebTarget()
@@ -261,7 +256,6 @@ class RemoteController() : DatabaseExecutor {
     fun resetSUT() = startSUT()
 
     fun checkConnection() {
-        logger.info("check connection")
         val response = try {
             getWebTarget()
                     .path(ControllerConstants.CONTROLLER_INFO)
@@ -277,7 +271,6 @@ class RemoteController() : DatabaseExecutor {
     }
 
     fun startANewSearch(): Boolean {
-        logger.info("NEW SEARCH")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.NEW_SEARCH)
@@ -291,7 +284,6 @@ class RemoteController() : DatabaseExecutor {
     fun getTestResults(ids: Set<Int> = setOf(), ignoreKillSwitch: Boolean = false): TestResultsDto? {
 
         val queryParam = ids.joinToString(",")
-        logger.info("test RESULTS")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.TEST_RESULTS)
@@ -317,7 +309,6 @@ class RemoteController() : DatabaseExecutor {
      */
     fun executeNewRPCActionAndGetResponse(actionDto: ActionDto) : ActionResponseDto?{
 
-        logger.info("actionDto")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.NEW_ACTION)
@@ -330,12 +321,10 @@ class RemoteController() : DatabaseExecutor {
         if (!checkResponse(response, dto, "Failed to execute RPC call")) {
             return null
         }
-        logger.info("dto.data")
         return dto?.data
     }
 
     fun registerNewAction(actionDto: ActionDto) : Boolean{
-        logger.info("new actionDto")
         val response = makeHttpCall {
             getWebTarget()
                     .path(ControllerConstants.NEW_ACTION)

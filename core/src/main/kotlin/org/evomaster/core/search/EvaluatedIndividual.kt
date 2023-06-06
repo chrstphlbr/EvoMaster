@@ -21,19 +21,21 @@ import org.evomaster.core.search.tracer.TrackingHistory
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.util.*
+import com.google.gson.Gson
+import org.evomaster.core.search.impact.impactinfocollection.ActionStructureImpact
 
 /**
  * EvaluatedIndividual allows to tracking its evolution.
  * Note that tracking EvaluatedIndividual can be enabled by set EMConfig.enableTrackEvaluatedIndividual true.
  */
-class EvaluatedIndividual<T>(val fitness: FitnessValue,
+class EvaluatedIndividual<T>(var fitness: FitnessValue,
                              val individual: T,
                              /**
                               * Note: as the test execution could had been
                               * prematurely stopped, there might be less
                               * results than actions
                               */
-                             private val results: List<out ActionResult>,
+                             val results: List<out ActionResult>,
 
                              // for tracking its history
                              override var trackOperator: TrackOperator? = null,
@@ -45,6 +47,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
 ) : Traceable where T : Individual {
 
     override var evaluatedResult: EvaluatedMutation? = null
+    val impactsOfStructure: ActionStructureImpact = ActionStructureImpact("StructureSize")
 
 
     override var tracking: TrackingHistory<out Traceable>? = null
@@ -65,6 +68,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     var hasImprovement = false
 
     val clusterAssignments : MutableSet<String> = mutableSetOf()
+    // var totalCounts = Map<String, Int>? = null
 
     /**
      * How long it took to evaluate this individual.
@@ -83,6 +87,8 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         }
     }
 
+
+
     constructor(fitness: FitnessValue, individual: T, results: List<out ActionResult>, trackOperator: TrackOperator? = null, index: Int = -1, config : EMConfig):
             this(fitness, individual, results,
                 trackOperator = trackOperator,
@@ -90,16 +96,29 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 impactInfo = if ((config.isEnabledImpactCollection())){
                     if(individual is RestIndividual && config.isEnabledResourceDependency()) {
                         val actions = individual.seeActions()
+                    //    getResults(individual, results)
+                    val totalCounts = results.flatMap { it.totalCounts.entries }
+                            .groupBy({ it.key }, { it.value })
+                            .mapValues { (_, values) -> values.sum() }
+
+                        totalCounts.forEach { (resultType, count) ->
+                            logger.info("resultType ev: $resultType, count: $count ")
+                        }
+
                                         logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" +
                                                  "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${if (i < results.size) results[i] else "No result available"}" }} \n  \n" +
                                                                 "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
                                                               "* Fitness Value: ${fitness.size} \n" +
                                                               "* Covered targets: ${fitness.coveredTargets()} \n"
                                                    )
-
                         ResourceImpactOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
                     } else {
-                        ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
+
+                    val totalCounts = results.flatMap { it.totalCounts.entries }
+                            .groupBy({ it.key }, { it.value })
+                            .mapValues { (_, values) -> values.sum() }
+
+                        ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness, totalCounts)
                     }
                 }
                 else {
@@ -448,7 +467,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
             impactInfo.countResourceSizeImpact(previous as RestIndividual, current = next.individual as RestIndividual, noImpactTargets= noImpactTargets, impactTargets = impactTargets, improvedTargets = improvedTargets)
         }
 
-            logger.info("previous individual ${previous} next individual ${next?.individual}")
     }
 
 

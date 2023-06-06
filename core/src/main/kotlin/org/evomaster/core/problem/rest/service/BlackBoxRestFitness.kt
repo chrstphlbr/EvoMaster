@@ -14,8 +14,11 @@ import javax.ws.rs.core.NewCookie
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import org.evomaster.core.search.impact.impactinfocollection.ActionStructureImpact
 
 class BlackBoxRestFitness : RestFitness() {
+    val impactsOfStructure: ActionStructureImpact = ActionStructureImpact("StructureSize")
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(BlackBoxRestFitness::class.java)
@@ -102,6 +105,7 @@ class BlackBoxRestFitness : RestFitness() {
         val fv = FitnessValue(individual.size().toDouble())
 
         val actionResults: MutableList<ActionResult> = mutableListOf()
+        val totalCounts = mutableMapOf<String, Int>()
 
         //used for things like chaining "location" paths
         val chainState = mutableMapOf<String, String>()
@@ -137,10 +141,82 @@ class BlackBoxRestFitness : RestFitness() {
 
        // val updatedActions = individual.seeActions().filterIndexed { index, _ -> !skippedActionIndexes.contains(index) }
 
+        val actions = individual?.seeActions()
+        // Count variables
+
+
+        actions?.forEachIndexed { i, action ->
+            if (i < actionResults?.size) {
+                val actionResult = actionResults?.get(i).toString()
+                val responseJson = actionResult.substringAfter("\n")
+                val trimmedJson = responseJson.substringBeforeLast(",")
+                val bodyParamsResponse = trimmedJson.substringAfter("bodyParamsResponse=")
+                if (bodyParamsResponse.startsWith("{") && bodyParamsResponse.endsWith("}")) {
+                    val gson = Gson()
+                    val json = gson.fromJson(bodyParamsResponse, JsonObject::class.java)
+
+                    if (json != null) {
+                        val counts = processJsonObject(json)
+                        counts.forEach { (resultType, count) ->
+                            totalCounts[resultType] = totalCounts.getOrDefault(resultType, 0) + count
+                            // totalCounts['invokedRules'] = totalCounts.getOrDefault('invokedRules', 0) + count
+
+                        }
+                        counts
+                        actionResults[i].totalCounts = counts
+                        // "enum": ["", "Prod", "Test", "CRN"]
+
+                    }
+                }
+                //actionResults[i].totalCounts = totalCounts
+            }
+        //    logger.info("Action nr. $i: $action \n bodyParamsResponse: $bodyParamsResponse")
+        }
         handleResponseTargets(fv, individual.seeActions(), actionResults, listOf())
 
+        totalCounts.forEach { (resultType, count) ->
+            logger.info("resultType bb: $resultType, count: $count ")
+        }
+
+      //  val evaluatedIndividual = EvaluatedIndividual(fv, individual as RestIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
+
+      //  logger.info("${actions?.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${actionResults?.get(i)}"}}")
+      // impactsOfStructure.updateFitnessScore(individual, fv, totalCounts)
         return EvaluatedIndividual(fv, individual as RestIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
     }
+
+    fun processJsonObject(jsonObject: JsonObject): Map<String, Int> {
+        val counts = mutableMapOf<String, Int>()
+        val rules = "invokedRules"
+        for ((key, value) in jsonObject.entrySet()) {
+            if (key == "resultType") {
+                val resultType = value.asString
+                counts[resultType] = counts.getOrDefault(resultType, 0) + 1
+            }
+            else if (key == "ruleId") {
+                val resultType = rules
+                counts[resultType] = counts.getOrDefault(resultType, 0) + 1
+            }
+            else if (value.isJsonObject) {
+                val nestedCounts = processJsonObject(value.asJsonObject)
+                nestedCounts.forEach { (resultType, count) ->
+                    counts[resultType] = counts.getOrDefault(resultType, 0) + count
+
+                }
+            } else if (value.isJsonArray) {
+                for (element in value.asJsonArray) {
+                    if (element.isJsonObject) {
+                        val nestedCounts = processJsonObject(element.asJsonObject)
+                        nestedCounts.forEach { (resultType, count) ->
+                            counts[resultType] = counts.getOrDefault(resultType, 0) + count
+                        }
+                    }
+                }
+            }
+        }
+        return counts
+    }
+
 
     override fun getlocation5xx(status: Int, additionalInfoList: List<AdditionalInfoDto>, indexOfAction: Int, result: HttpWsCallResult, name: String): String? {
         /*

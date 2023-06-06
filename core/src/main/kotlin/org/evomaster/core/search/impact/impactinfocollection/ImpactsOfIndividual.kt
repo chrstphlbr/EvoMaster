@@ -37,17 +37,23 @@ open class ImpactsOfIndividual(
         val impactsOfStructure: ActionStructureImpact = ActionStructureImpact("StructureSize")
 ) {
 
-    constructor(individual: Individual, abstractInitializationGeneToMutate: Boolean,  fitnessValue: FitnessValue?) : this(
+    constructor(individual: Individual, abstractInitializationGeneToMutate: Boolean,  fitnessValue: FitnessValue?, totalCounts: Map<String, Int>? = null) : this(
             initializationGeneImpacts = InitializationActionImpacts(abstractInitializationGeneToMutate),//individual.seeInitializingActions().map { a -> ImpactsOfAction(a) }.toMutableList(),
             actionGeneImpacts = if (individual.seeActions(ActionFilter.NO_INIT).isEmpty()) mutableListOf(ImpactsOfAction(individual, individual.seeGenes())) else individual.seeActions(ActionFilter.NO_INIT).map { a -> ImpactsOfAction(a) }.toMutableList()
     ) {
         if (fitnessValue != null) {
+            totalCounts?.forEach { (resultType, count) ->
+                  logger.info("resultType ev: $resultType, count: $count ")
+             }
             impactsOfStructure.updateStructure(individual, fitnessValue)
         }
     }
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ImpactsOfIndividual::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
+
+
     }
 
     /**

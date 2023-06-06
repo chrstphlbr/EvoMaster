@@ -10,6 +10,8 @@ import org.evomaster.core.search.service.mutator.EvaluatedMutation
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import kotlin.math.min
+import org.evomaster.core.search.Individual
+import org.evomaster.core.problem.rest.RestIndividual
 
 /**
 As the number of targets is unknown, we cannot have
@@ -35,6 +37,8 @@ class FitnessValue(
         fun isMaxValue(value: Double) = value == MAX_VALUE
 
         private val log: Logger = LoggerFactory.getLogger(FitnessValue::class.java)
+        private val logger = LoggerFactory.getLogger("test_cases")
+
     }
 
     /**
@@ -43,6 +47,8 @@ class FitnessValue(
      *  Value -> heuristic distance in [0,1], where 1 is for "covered"
      */
     private val targets: MutableMap<Int, Heuristics> = mutableMapOf()
+    private val totalCounts = mutableMapOf<String, Int>()
+    var newFitnessScore: Double = 0.0
 
     /**
      *  Key -> action Id
@@ -125,8 +131,66 @@ class FitnessValue(
 
     fun reachedTargets() : Set<Int> = getViewOfData().filter { it.value.distance > 0.0 }.keys
 
+    fun computeNewFitnessScore(fitness: Double, individualSize: Int? = null, totalHits: Int? = null, invokedRules: Int? = null): Double {
+
+        logger.info("CFS:::::: fitness: $fitness, individualSize: $individualSize, totalHits: $totalHits, invokedRules: $invokedRules  extraToMinimize ${extraToMinimize}")
+        val penaltyFactor = if (individualSize != null && individualSize > 0) 1.0 / individualSize else 0.0
+
+        newFitnessScore = (totalHits?.toDouble() ?: 0.0) / (invokedRules?.toDouble() ?: 1.0) * fitness.toDouble() * penaltyFactor
+        logger.info("fitnessScore___: ${newFitnessScore}")
+
+        return newFitnessScore
+    }
+
+    fun computeDefaultFitnessScore(): Double {
+        val fitnessScore = targets.values.map { h -> h.distance }.sum()
+        return fitnessScore
+    }
+
     fun computeFitnessScore(): Double {
-        return targets.values.map { h -> h.distance }.sum()
+        var fitnessScore = targets.values.map { h -> h.distance }.sum()
+        logger.info("computeFitnessScore: $fitnessScore ")
+        logger.info("new _ fitnessScore___: ${newFitnessScore} :: extraToMinimize ${this.extraToMinimize}")
+
+        //   val actions = individual?.seeActions()
+    //   val result = individual?.evaluatedResult
+   //     logger.info("fitness: $fitness result $result ::: ${actions?.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${result?.get(i)}"}}")
+
+
+        val reachedTargetKeys = reachedTargets()
+        logger.info("reachedTargetKeys: ${reachedTargetKeys}")
+
+
+        //    val identifiedCases = listOf(
+        //       setOf(-10, -6),
+        //      setOf(-2, -3, -4),
+        //    setOf(-10, -6, -7),
+        //    setOf(-5, -6, -7),
+        //    setOf(-3, -10),
+        //    setOf(-10, -3, -4),
+        //     setOf(-3, -7),
+        //      setOf(-7, -3, -4)
+        //  )
+
+        //   val subsetMatch = identifiedCases.any { it.containsAll(reachedTargetKeys) }
+        //  val exactMatch = identifiedCases.any { it == reachedTargetKeys }
+
+        //   if (subsetMatch) {
+            // Add +2 bonus for subset matches
+        //       fitnessScore += 0.1
+        //  }
+
+        //  if (exactMatch) {
+            // Multiply the fitness score by 2 for exact matches
+        //     fitnessScore *= 2
+        //  }
+
+        // Perform other computations and adjustments to the fitness score
+        // ...
+
+        // Return the final fitness score
+        return fitnessScore
+    //    return targets.values.map { h -> h.distance }.sum()
     }
 
 /*    fun computeFitnessScore(predictedStatusCodes: Map<String, Int>? = null): Double {
@@ -430,7 +494,7 @@ class FitnessValue(
         }
 
         val extra = compareExtraToMinimize(target, other, strategy)
-
+        logger.info("extra: $extra")
         return betterThan(target =target, heuristics = z, size = other.size, extra = extra, minimumSize = minimumSize, bloatControlForSecondaryObjective = bloatControlForSecondaryObjective)
     }
 
@@ -443,6 +507,7 @@ class FitnessValue(
         if (z != v) return false
 
         val extra = compareExtraToMinimize(target, other, strategy)
+        logger.info("extra: $extra")
 
         //WARN: cannot really do this unless we update betterThan as well.
         //      But unclear if really make sense when considering specific targets
@@ -463,11 +528,14 @@ class FitnessValue(
 
     private fun betterThan(target: Int, heuristics: Double, size: Double, extra: Int, bloatControlForSecondaryObjective: Boolean, minimumSize: Int) : Boolean{
 
+        logger.info("target; $target")
         if (log.isTraceEnabled){
             log.trace("for target{}, checking betterThan with extras and extra is {}", target, extra)
         }
 
         val v = getHeuristic(target)
+        logger.info("getHeuristic; $v")
+
         if (v < heuristics) {
 
             if (log.isTraceEnabled){
@@ -535,6 +603,7 @@ class FitnessValue(
             strategy: EMConfig.SecondaryObjectiveStrategy)
             : Int {
 
+        logger.info("strategy: $strategy, target id: $target, other: $other")
         return when(strategy){
             AVG_DISTANCE -> compareAverage(target, other)
             AVG_DISTANCE_SAME_N_ACTIONS -> compareAverageSameNActions(target, other)
