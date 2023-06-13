@@ -50,17 +50,12 @@ abstract class FitnessFunction<T>  where T : Individual {
         val logger = LoggerFactory.getLogger("test_cases")
 
         val a = individual.seeActions().filter { a -> a.shouldCountForFitnessEvaluations() }.count()
-        logger.info("a: $a")
         if(time.averageOverheadMsBetweenTests.isRecordingTimer()){
             time.averageOverheadMsBetweenTests.addElapsedTime()
         }
 
         var ei = calculateIndividualWithPostHandling(individual, targets, a)
-        var viewData = ei?.fitness?.getViewOfData()
-        var ff = ei?.fitness?.copy()
-        logger.info("viewData: $viewData")
-        logger.info("ei.fitness.copy(): $ff")
-
+        //var viewData = ei?.fitness?.getViewOfData()
         if(ei == null){
             /*
                 try again, once. Working with TCP connections and remote servers,
@@ -88,7 +83,6 @@ abstract class FitnessFunction<T>  where T : Individual {
 
         time.newActionEvaluation(maxOf(1, a))
         time.newIndividualEvaluation()
-        logger.info("ei: $ei")
         logger.info("##################################################################################################################")
     //    logger.info("###########**** Individual size: ${individual.size()}, Execution time: ${ei?.executionTimeMs} ms\" ****###########")
     //    logger.info("##################################################################################################################")

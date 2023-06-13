@@ -20,8 +20,6 @@ class SearchTimeController {
 
     companion object{
         private val log = LoggerFactory.getLogger(SearchTimeController::class.java)
-        private val logger = LoggerFactory.getLogger("test_cases")
-
     }
 
 
@@ -105,7 +103,6 @@ class SearchTimeController {
     }
 
     fun reportConnectionCloseRequest(httpStatus: Int){
-        logger.info("httpStatus", httpStatus)
         connectionCloseRequest++
         //evaluatedActions is updated at the end of test case
         //assert(evaluatedActions > actionWhenLastConnectionCloseRequest)
@@ -118,7 +115,6 @@ class SearchTimeController {
         }
 
         actionWhenLastConnectionCloseRequest = evaluatedActions
-        logger.info("evaluatedActions", evaluatedActions)
         LoggingUtil.uniqueWarn(log, "The SUT sent a 'Connection: close' HTTP header. This should be avoided, if possible")
         log.debug("SUT requested a 'Connection: close' in a HTTP response. Ratio: total=$total , since-last=$sinceLast, HTTP=$httpStatus")
     }

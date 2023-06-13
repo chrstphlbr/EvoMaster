@@ -131,88 +131,13 @@ class FitnessValue(
 
     fun reachedTargets() : Set<Int> = getViewOfData().filter { it.value.distance > 0.0 }.keys
 
-    fun computeNewFitnessScore(fitness: Double, individualSize: Int? = null, totalHits: Int? = null, invokedRules: Int? = null): Double {
-
-        logger.info("CFS:::::: fitness: $fitness, individualSize: $individualSize, totalHits: $totalHits, invokedRules: $invokedRules  extraToMinimize ${extraToMinimize}")
-        val penaltyFactor = if (individualSize != null && individualSize > 0) 1.0 / individualSize else 0.0
-
-        newFitnessScore = (totalHits?.toDouble() ?: 0.0) / (invokedRules?.toDouble() ?: 1.0) * fitness.toDouble() * penaltyFactor
-        logger.info("fitnessScore___: ${newFitnessScore}")
-
-        return newFitnessScore
-    }
-
-    fun computeDefaultFitnessScore(): Double {
-        val fitnessScore = targets.values.map { h -> h.distance }.sum()
-        return fitnessScore
-    }
-
     fun computeFitnessScore(): Double {
-        var fitnessScore = targets.values.map { h -> h.distance }.sum()
-        logger.info("computeFitnessScore: $fitnessScore ")
-        logger.info("new _ fitnessScore___: ${newFitnessScore} :: extraToMinimize ${this.extraToMinimize}")
-
-        //   val actions = individual?.seeActions()
-    //   val result = individual?.evaluatedResult
-   //     logger.info("fitness: $fitness result $result ::: ${actions?.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${result?.get(i)}"}}")
-
-
         val reachedTargetKeys = reachedTargets()
         logger.info("reachedTargetKeys: ${reachedTargetKeys}")
 
-
-        //    val identifiedCases = listOf(
-        //       setOf(-10, -6),
-        //      setOf(-2, -3, -4),
-        //    setOf(-10, -6, -7),
-        //    setOf(-5, -6, -7),
-        //    setOf(-3, -10),
-        //    setOf(-10, -3, -4),
-        //     setOf(-3, -7),
-        //      setOf(-7, -3, -4)
-        //  )
-
-        //   val subsetMatch = identifiedCases.any { it.containsAll(reachedTargetKeys) }
-        //  val exactMatch = identifiedCases.any { it == reachedTargetKeys }
-
-        //   if (subsetMatch) {
-            // Add +2 bonus for subset matches
-        //       fitnessScore += 0.1
-        //  }
-
-        //  if (exactMatch) {
-            // Multiply the fitness score by 2 for exact matches
-        //     fitnessScore *= 2
-        //  }
-
-        // Perform other computations and adjustments to the fitness score
-        // ...
-
         // Return the final fitness score
-        return fitnessScore
-    //    return targets.values.map { h -> h.distance }.sum()
+        return targets.values.map { h -> h.distance }.sum()
     }
-
-/*    fun computeFitnessScore(predictedStatusCodes: Map<String, Int>? = null): Double {
-        return if (predictedStatusCodes != null) {
-            targets.values.map { h ->
-                if (predictedStatusCodes.containsKey(h.targetId)) {
-                    val predicted = predictedStatusCodes[h.targetId]
-                    if (predicted != h.expectedStatusCode) {
-                        h.distance + 1.0 // penalty for wrong prediction
-                    } else {
-                        h.distance
-                    }
-                } else {
-                    h.distance
-                }
-            }.sum()
-        } else {
-            targets.values.map { h -> h.distance }.sum()
-        }
-    }*/
-
-
 
     fun computeFitnessScore(targetIds : List<Int>): Double {
 
@@ -603,7 +528,6 @@ class FitnessValue(
             strategy: EMConfig.SecondaryObjectiveStrategy)
             : Int {
 
-        logger.info("strategy: $strategy, target id: $target, other: $other")
         return when(strategy){
             AVG_DISTANCE -> compareAverage(target, other)
             AVG_DISTANCE_SAME_N_ACTIONS -> compareAverageSameNActions(target, other)

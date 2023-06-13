@@ -38,19 +38,23 @@ import org.evomaster.core.search.service.*
 import org.evomaster.core.search.service.monitor.SearchProcessMonitor
 import org.evomaster.core.search.service.mutator.genemutation.ArchiveImpactSelector
 import java.lang.reflect.InvocationTargetException
-
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * This will be the entry point of the tool when run from command line
  */
 class Main {
     companion object {
+        private val logger = LoggerFactory.getLogger("test_cases")
 
         /**
          * Main entry point of the EvoMaster application
          */
         @JvmStatic
         fun main(args: Array<String>) {
+
+            logger.info("########################################### NEW REPETITION ###########################################")
 
             try {
 
@@ -239,7 +243,7 @@ class Main {
         fun init(args: Array<String>): Injector {
 
             LoggingUtil.getInfoLogger().info("Initializing...")
-
+// TO DO:logger:::
             val base = BaseModule(args)
             val config = base.getEMConfig()
 

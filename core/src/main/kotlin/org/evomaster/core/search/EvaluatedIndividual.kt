@@ -102,9 +102,8 @@ class EvaluatedIndividual<T>(var fitness: FitnessValue,
                             .mapValues { (_, values) -> values.sum() }
 
                         totalCounts.forEach { (resultType, count) ->
-                            logger.info("resultType ev: $resultType, count: $count ")
+                        //    logger.info("resultType ev: $resultType, count: $count ")
                         }
-
                                         logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" +
                                                  "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${if (i < results.size) results[i] else "No result available"}" }} \n  \n" +
                                                                 "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
@@ -113,12 +112,7 @@ class EvaluatedIndividual<T>(var fitness: FitnessValue,
                                                    )
                         ResourceImpactOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
                     } else {
-
-                    val totalCounts = results.flatMap { it.totalCounts.entries }
-                            .groupBy({ it.key }, { it.value })
-                            .mapValues { (_, values) -> values.sum() }
-
-                        ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness, totalCounts)
+                        ImpactsOfIndividual(individual, config.abstractInitializationGeneToMutate, fitness)
                     }
                 }
                 else {

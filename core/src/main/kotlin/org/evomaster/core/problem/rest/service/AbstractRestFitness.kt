@@ -221,9 +221,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
                         .mapValues { (_, values) -> values.sum() }
 
                     handleTotalCounts(fv, totalCounts, it)
-
-                    logger.info("statusId: $statusId, status: $status, name: $name totalCounts: $totalCounts, location5xx: $location5xx")
-
+                    logger.info("Rule results:::: $totalCounts")
                     handleAdditionalStatusTargetDescription(fv, status, name, it, location5xx)
 
                     if(config.expectationsActive) {
@@ -234,19 +232,44 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
 
     fun handleTotalCounts(fv: FitnessValue, totalCounts: Map<String, Int>, indexOfAction : Int){
         if (totalCounts?.isNotEmpty() == true) {
+            val nrInvokedRules = totalCounts["invokedRules"]
+            val nrInf = totalCounts["INFO"]
+            val nrNA = totalCounts["NOT_APPLIED"]
+            val nrErr= totalCounts["ERROR"]
+            val nrWar = totalCounts["WARNING"]
+
             val invokedRules = idMapper.handleLocalTarget("invokedRules:${totalCounts["invokedRules"]}")
             fv.updateTarget(invokedRules, 1.0, indexOfAction)
+
             val INFO = idMapper.handleLocalTarget("INFO:${totalCounts["INFO"]}")
-            fv.updateTarget(INFO, 1.0, indexOfAction)
+            if (nrInf != null) {
+                fv.updateTarget(INFO, 1.0, indexOfAction)
+            } else {
+                fv.updateTarget(INFO, 0.5, indexOfAction)
+            }
+
             val NOT_APPLIED = idMapper.handleLocalTarget("NOT_APPLIED:${totalCounts["NOT_APPLIED"]}")
-            fv.updateTarget(NOT_APPLIED, 1.0, indexOfAction)
+            if (nrNA != null) {
+                fv.updateTarget(NOT_APPLIED, 1.0, indexOfAction)
+            } else {
+                fv.updateTarget(NOT_APPLIED, 0.5, indexOfAction)
+            }
+
             val ERROR = idMapper.handleLocalTarget("ERROR:${totalCounts["ERROR"]}")
-            fv.updateTarget(ERROR, 1.0, indexOfAction)
+            if (nrErr != null) {
+                fv.updateTarget(ERROR, 1.0, indexOfAction)
+            } else {
+                fv.updateTarget(ERROR, 0.5, indexOfAction)
+            }
+
             val WARNING = idMapper.handleLocalTarget("WARNING:${totalCounts["WARNING"]}")
-            fv.updateTarget(WARNING, 1.0, indexOfAction)
+            if (nrWar != null) {
+                fv.updateTarget(WARNING, 1.0, indexOfAction)
+            } else {
+                fv.updateTarget(WARNING, 0.5, indexOfAction)
+            }
 
-
-            logger.info("invokedRules: $invokedRules, INFO: $INFO, NOT_APPLIED: $NOT_APPLIED, ERROR: $ERROR WARNING: $WARNING ")
+        //    logger.info("invokedRules: $invokedRules : $nrInvokedRules, INFO: $INFO : $nrInf, NOT_APPLIED: $NOT_APPLIED : $nrNA, ERROR: $ERROR : $nrErr WARNING: $WARNING : $nrWar ")
         }
     }
 
@@ -255,8 +278,6 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
         /*
            Objectives for the two partial oracles implemented thus far.
         */
-        logger.info(" name handleAdditionalOracleTargetDescription: $name ")
-
         val call = actions[indexOfAction] as RestCallAction
         val oracles = writer.getPartialOracles().activeOracles(call, result)
         oracles.filter { it.value }.forEach { entry ->
@@ -274,8 +295,6 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
            that endpoint. If we get 2xx, and full coverage, then no gradient to try
            to keep sampling that endpoint to get a 5xx
         */
-        logger.info(" name handleAdditionalStatusTargetDescription: $name ")
-
         val okId = idMapper.handleLocalTarget("HTTP_SUCCESS:$name")
         val faultId = idMapper.handleLocalTarget("HTTP_FAULT:$name")
 

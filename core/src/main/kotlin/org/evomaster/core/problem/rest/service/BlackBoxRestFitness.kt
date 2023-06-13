@@ -28,10 +28,8 @@ class BlackBoxRestFitness : RestFitness() {
 
     fun predictStatusCode(individual: RestIndividual, individualIndex: Int): RestIndividual {
         logger.info("Size: ${individual.seeActions().size}")
-        logger.info("individualIndex: ${individualIndex}")
         for (i in individual.seeActions().size - 1 downTo 0) {
             val action = individual.seeActions()[i]
-            logger.info("index: , ${i}, action: ${action}")
             val actionObject = action.getFormattedParameters().map { it.toString() }
             val actionObjectJson = "'${actionObject.joinToString(",")}'"
             val scriptDirectory = "~/Project/GURI-GitHub/ait4cr-rest-test-experiments/"
@@ -50,17 +48,16 @@ class BlackBoxRestFitness : RestFitness() {
 
                 // Process the output returned by the Python script
                 val output1 = process.inputStream.bufferedReader().use(BufferedReader::readText)
-            //    logger.info("output1: $output1")
+                //logger.info("output1: $output1")
                 val output2 = process.errorStream.bufferedReader().use(BufferedReader::readText)
-            //    logger.info("output2: $output2")
+                //logger.info("output2: $output2")
                 val predictionValue = output1.substringAfterLast("[")
                     .substringBeforeLast("]")
                     .trim()
                     .toInt()
 
-                logger.info("Prediction: $predictionValue")
-
                 if (predictionValue == 0) {
+                    logger.info("Prediction: $predictionValue")
                     individual.removeResourceCall(i)
                 }
             }  else {
@@ -119,18 +116,11 @@ class BlackBoxRestFitness : RestFitness() {
             var ok = false
 
             if (a is RestCallAction) {
-
-                    //    if (output1.trim() == "0") {
-                    //        individual.removeResourceCall(i)
-                    //    }
-
                         ok = handleRestCall(a, actionResults, chainState, cookies, tokens)
                         actionResults[i].stopping = !ok
-
                 } else {
                     throw IllegalStateException("Cannot handle: ${a.javaClass}")
                 }
-
 
         //    }
 
@@ -139,11 +129,7 @@ class BlackBoxRestFitness : RestFitness() {
             }
         }
 
-       // val updatedActions = individual.seeActions().filterIndexed { index, _ -> !skippedActionIndexes.contains(index) }
-
         val actions = individual?.seeActions()
-        // Count variables
-
 
         actions?.forEachIndexed { i, action ->
             if (i < actionResults?.size) {
@@ -170,18 +156,13 @@ class BlackBoxRestFitness : RestFitness() {
                 }
                 //actionResults[i].totalCounts = totalCounts
             }
-        //    logger.info("Action nr. $i: $action \n bodyParamsResponse: $bodyParamsResponse")
         }
         handleResponseTargets(fv, individual.seeActions(), actionResults, listOf())
 
         totalCounts.forEach { (resultType, count) ->
-            logger.info("resultType bb: $resultType, count: $count ")
+        //    logger.info("resultType bb: $resultType, count: $count ")
         }
 
-      //  val evaluatedIndividual = EvaluatedIndividual(fv, individual as RestIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
-
-      //  logger.info("${actions?.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${actionResults?.get(i)}"}}")
-      // impactsOfStructure.updateFitnessScore(individual, fv, totalCounts)
         return EvaluatedIndividual(fv, individual as RestIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
     }
 
