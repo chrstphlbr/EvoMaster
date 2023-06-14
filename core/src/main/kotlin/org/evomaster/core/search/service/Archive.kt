@@ -335,11 +335,13 @@ class Archive<T> where T : Individual {
     fun addIfNeeded(ei: EvaluatedIndividual<T>): Boolean {
 
         val copy = ei.copy(tracker.getCopyFilterForEvalInd(ei))
+        logger.info("current ei:  ${ei.individual.size()}")
 
         var added = false
         var anyBetter = false
 
         for ((k, v) in ei.fitness.getViewOfData()) {
+            logger.info("ei.fitness.getViewOfData() ${ei.fitness.getViewOfData()}")
 
             if (v.distance == 0.0) {
                 /*
@@ -368,6 +370,7 @@ class Archive<T> where T : Individual {
             val maxed = FitnessValue.isMaxValue(v.distance)
 
             if (isCovered(k) && maxed) {
+                logger.info("target k $k, $maxed")
                 /*
                     Target is already covered. But could it
                     be that new individual covers it as well,
@@ -382,7 +385,7 @@ class Archive<T> where T : Individual {
                 val shorter = copy.individual.size() < current[0].individual.size()
                 val sameLengthButBetterScore = (copy.individual.size() == current[0].individual.size())
                         && (copy.fitness.computeFitnessScore() > current[0].fitness.computeFitnessScore())
-
+                logger.info("shorter: $shorter, sameLengthButBetterScore: $sameLengthButBetterScore")
                 /*
                  * Once a target is covered, we check if can cover it with a new test that is shorter.
                  * Given two tests covering the same target, both with same length, then we prefer
@@ -417,6 +420,7 @@ class Archive<T> where T : Individual {
              */
 
             val curr = current[0]
+            logger.info("worst individual score: ${curr.fitness.computeFitnessScore()}")
             Lazy.assert {
                 curr.fitness.size == curr.individual.size().toDouble()
                         &&
@@ -471,7 +475,7 @@ class Archive<T> where T : Individual {
             TODO should log them to a file
         */
         //LoggingUtil.getInfoLogger().info("$added $anyBetter ${ei.individual.populationOrigin}")
-
+        logger.info("has improvement: $anyBetter, added: $added")
         ei.hasImprovement = anyBetter
         return added
     }

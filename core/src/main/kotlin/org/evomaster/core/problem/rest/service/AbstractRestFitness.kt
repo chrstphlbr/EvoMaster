@@ -220,14 +220,22 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
                         .groupBy({ it.key }, { it.value })
                         .mapValues { (_, values) -> values.sum() }
 
-                    handleTotalCounts(fv, totalCounts, it)
+                    //areRulesCovered(fv, totalCounts, it)
                     logger.info("Rule results:::: $totalCounts")
-                    handleAdditionalStatusTargetDescription(fv, status, name, it, location5xx)
+                    handleAdditionalStatusTargetDescription(fv, status, name, it, location5xx, totalCounts)
 
                     if(config.expectationsActive) {
                         handleAdditionalOracleTargetDescription(fv, actions, result, name, it)
                     }
                 }
+    }
+
+    fun areRulesCovered(fv: FitnessValue, totalCounts: Map<String, Int>, indexOfAction : Int) {
+        if (totalCounts?.isNotEmpty()) {
+            val coverdRules = idMapper.handleLocalTarget("RULES_COVERED")
+            fv.updateTarget(coverdRules, 1.0, indexOfAction)
+            logger.info("covered?: $coverdRules")
+        }
     }
 
     fun handleTotalCounts(fv: FitnessValue, totalCounts: Map<String, Int>, indexOfAction : Int){
@@ -288,7 +296,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
     }
 
 
-    fun handleAdditionalStatusTargetDescription(fv: FitnessValue, status : Int, name: String, indexOfAction : Int, location5xx: String?){
+    fun handleAdditionalStatusTargetDescription(fv: FitnessValue, status : Int, name: String, indexOfAction : Int, location5xx: String?, totalCounts: Map<String, Int>){
         /*
            Objectives for results on endpoints.
            Problem: we might get a 4xx/5xx, but then no gradient to keep sampling for
@@ -297,6 +305,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
         */
         val okId = idMapper.handleLocalTarget("HTTP_SUCCESS:$name")
         val faultId = idMapper.handleLocalTarget("HTTP_FAULT:$name")
+        val coveredRules = idMapper.handleLocalTarget("COVERED_RULES:$name")
 
         //OK -> 5xx being better than 4xx, as code executed
         //FAULT -> 4xx worse than 2xx (can't find bugs if input is invalid)
@@ -306,10 +315,13 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
         } else if (status in 400..499) {
             fv.updateTarget(okId, 0.1, indexOfAction)
             fv.updateTarget(faultId, 0.1, indexOfAction)
-        } else if (status in 500..599) {
-            fv.updateTarget(okId, 0.5, indexOfAction)
-            fv.updateTarget(faultId, 1.0, indexOfAction)
+        } else if (!totalCounts.isNullOrEmpty()) {
+            fv.updateTarget(coveredRules, 1.0, indexOfAction)
         }
+        //    if (status in 500..599) {
+        //    fv.updateTarget(okId, 0.5, indexOfAction)
+        //    fv.updateTarget(faultId, 1.0, indexOfAction)
+       // }
 
         if (status == 500){
             /*
