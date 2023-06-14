@@ -56,7 +56,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         const val ONLY_WITH_CLONE_IMPACT = "ONLY_WITH_CLONE_IMPACT"
 
         private val log: Logger = LoggerFactory.getLogger(EvaluatedIndividual::class.java)
-        private val logger = LoggerFactory.getLogger("test_cases")
+        private val logger = LoggerFactory.getLogger("test_cases_default")
     }
 
     /**

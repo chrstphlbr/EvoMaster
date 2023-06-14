@@ -46,7 +46,7 @@ abstract class FitnessFunction<T>  where T : Individual {
      * @return [null] if there were problems in calculating the coverage
      */
     fun calculateCoverage(individual: T, targets: Set<Int> = setOf()) : EvaluatedIndividual<T>?{
-        val logger = LoggerFactory.getLogger("test_cases")
+        val logger = LoggerFactory.getLogger("test_cases_default")
 
         val a = individual.seeActions().filter { a -> a.shouldCountForFitnessEvaluations() }.count()
 

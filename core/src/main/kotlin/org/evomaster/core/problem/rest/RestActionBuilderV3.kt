@@ -403,7 +403,8 @@ object RestActionBuilderV3 {
             //Besides the defined values, add one to test robustness
             when (type) {
                 "string" ->
-                    return EnumGene(name, (schema.enum as MutableList<String>).apply { add("EVOMASTER") })
+                    return EnumGene(name, (schema.enum as MutableList<String>))
+                //    return EnumGene(name, (schema.enum as MutableList<String>).apply { add("EVOMASTER") })
                 /*
                     Looks like a possible bug in the parser, where numeric enums can be read as strings... got this
                     issue in GitLab schemas, eg for visibility_level

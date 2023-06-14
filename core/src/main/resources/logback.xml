@@ -16,10 +16,10 @@
     </appender>
 
     <appender name="LOG_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>test_cases.txt</file>
+        <file>test_cases_default.txt</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>log.%d{yyyy-MM-dd}.%i.txt</fileNamePattern>
-            <maxFileSize>10MB</maxFileSize>
+            <maxFileSize>1024MB</maxFileSize>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
@@ -52,7 +52,7 @@
         <appender-ref ref="INFO_STDOUT" />
     </logger>
 
-    <logger name="test_cases" level="info" additivity="false">
+    <logger name="test_cases_default" level="info" additivity="false">
         <appender-ref ref="LOG_FILE" />
     </logger>
 
