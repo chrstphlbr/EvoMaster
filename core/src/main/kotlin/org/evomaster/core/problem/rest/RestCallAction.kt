@@ -56,7 +56,9 @@ class RestCallAction(
      * collect info of description and summary from swagger
      */
     private var description : String? = null
-
+    var predicted: Int? = 1
+    var predictionTimeMs: Long = Long.MAX_VALUE
+    var executionTimeMs: Long = Long.MAX_VALUE
     /**
      * tokens is used to present a set of tokens exist in the scheme, e.g., swagger specification
      * key is a parsed token

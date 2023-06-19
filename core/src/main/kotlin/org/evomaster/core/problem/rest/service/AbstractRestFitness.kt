@@ -221,7 +221,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
                         .mapValues { (_, values) -> values.sum() }
 
                     //areRulesCovered(fv, totalCounts, it)
-                    logger.info("Rule results:::: $totalCounts")
+                    //logger.info("Rule results:::: $totalCounts")
                     handleAdditionalStatusTargetDescription(fv, status, name, it, location5xx, totalCounts)
 
                     if(config.expectationsActive) {
@@ -232,9 +232,22 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
 
     fun areRulesCovered(fv: FitnessValue, totalCounts: Map<String, Int>, indexOfAction : Int) {
         if (totalCounts?.isNotEmpty()) {
+            val nrInf = totalCounts["INFO"]
+            val nrNA = totalCounts["NOT_APPLIED"] ?: 0
+            logger.info("nrInf?: $nrInf")
+            logger.info("nrNA?: $nrNA")
+
             val coverdRules = idMapper.handleLocalTarget("RULES_COVERED")
-            fv.updateTarget(coverdRules, 1.0, indexOfAction)
+            //fv.updateTarget(coverdRules, 1.0, indexOfAction)
             logger.info("covered?: $coverdRules")
+            val rulesPassed = idMapper.handleLocalTarget("RULES_PASSED:")
+
+            if (nrInf != null) {
+                if (nrInf >= nrNA!!) {
+                    fv.updateTarget(rulesPassed, 1.0, indexOfAction)
+                    fv.updateTarget(coverdRules, 1.0, indexOfAction)
+                }
+            }
         }
     }
 
@@ -303,10 +316,13 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
            that endpoint. If we get 2xx, and full coverage, then no gradient to try
            to keep sampling that endpoint to get a 5xx
         */
+        val nrInf = totalCounts["INFO"]
+        val nrNA = totalCounts["NOT_APPLIED"]
+
         val okId = idMapper.handleLocalTarget("HTTP_SUCCESS:$name")
         val faultId = idMapper.handleLocalTarget("HTTP_FAULT:$name")
-        val coveredRules = idMapper.handleLocalTarget("COVERED_RULES:$name")
-
+        val coveredRules = idMapper.handleLocalTarget("RULES_COVERED:")
+        val rulesPassed = idMapper.handleLocalTarget("RULES_PASSED:")
         //OK -> 5xx being better than 4xx, as code executed
         //FAULT -> 4xx worse than 2xx (can't find bugs if input is invalid)
         if (status in 200..299) {
@@ -315,13 +331,19 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
         } else if (status in 400..499) {
             fv.updateTarget(okId, 0.1, indexOfAction)
             fv.updateTarget(faultId, 0.1, indexOfAction)
-        } else if (!totalCounts.isNullOrEmpty()) {
-            fv.updateTarget(coveredRules, 1.0, indexOfAction)
+        } else
+        // if (!totalCounts.isNullOrEmpty()) {
+        // fv.updateTarget(coveredRules, 1.0, indexOfAction)
+        // if (nrInf != null) {
+        //    if (nrInf >= nrNA!!) {
+        //            fv.updateTarget(rulesPassed, 1.0, indexOfAction)
+        //   }
+        // }
+        // }
+            if (status in 500..599) {
+            fv.updateTarget(okId, 0.5, indexOfAction)
+            fv.updateTarget(faultId, 1.0, indexOfAction)
         }
-        //    if (status in 500..599) {
-        //    fv.updateTarget(okId, 0.5, indexOfAction)
-        //    fv.updateTarget(faultId, 1.0, indexOfAction)
-       // }
 
         if (status == 500){
             /*

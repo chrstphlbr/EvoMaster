@@ -16,6 +16,7 @@ import java.io.InputStreamReader
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import org.evomaster.core.search.impact.impactinfocollection.ActionStructureImpact
+import kotlin.system.measureTimeMillis
 
 class BlackBoxRestFitness : RestFitness() {
     val impactsOfStructure: ActionStructureImpact = ActionStructureImpact("StructureSize")
@@ -40,35 +41,41 @@ class BlackBoxRestFitness : RestFitness() {
             )
             processBuilder.redirectInput(ProcessBuilder.Redirect.PIPE)
             processBuilder.redirectOutput(ProcessBuilder.Redirect.PIPE)
-            val process = processBuilder.start()
+            val predictionTime = measureTimeMillis {
 
-            val exitCode = process.waitFor()
+                val process = processBuilder.start()
 
-            if (exitCode == 0) {
+                val exitCode = process.waitFor()
 
-                // Process the output returned by the Python script
-                val output1 = process.inputStream.bufferedReader().use(BufferedReader::readText)
-                //logger.info("output1: $output1")
-                val output2 = process.errorStream.bufferedReader().use(BufferedReader::readText)
-                //logger.info("output2: $output2")
-                val predictionValue = output1.substringAfterLast("[")
-                    .substringBeforeLast("]")
-                    .trim()
-                    .toInt()
+                if (exitCode == 0) {
 
-                if (predictionValue == 0) {
-                    logger.info("Prediction: $predictionValue")
-                    individual.removeResourceCall(i)
+                    // Process the output returned by the Python script
+                    val output1 = process.inputStream.bufferedReader().use(BufferedReader::readText)
+                    //logger.info("output1: $output1")
+                    val output2 = process.errorStream.bufferedReader().use(BufferedReader::readText)
+                    //logger.info("output2: $output2")
+                    val predictionValue = output1.substringAfterLast("[")
+                        .substringBeforeLast("]")
+                        .trim()
+                        .toInt()
+
+                    if (predictionValue == 0) {
+                        logger.info("Prediction: $predictionValue")
+                        action.predicted = 0
+                        //individual.removeResourceCall(i)
+                    }
+
+                } else {
+                    // Handle the case when the process exits with a non-zero exit code
+                    logger.error("Error executing Python script. Exit code: $exitCode")
+                    val errorMessage = process.errorStream.bufferedReader().use(BufferedReader::readText)
+                    logger.error("Error Message: $errorMessage")
                 }
-            }  else {
-                // Handle the case when the process exits with a non-zero exit code
-                logger.error("Error executing Python script. Exit code: $exitCode")
-                val errorMessage = process.errorStream.bufferedReader().use(BufferedReader::readText)
-                logger.error("Error Message: $errorMessage")
+
             }
-
+            action.predictionTimeMs = predictionTime
+            logger.info("Prediction executed in $predictionTime ms for action $i")
         }
-
         return individual
     }
 
@@ -116,8 +123,12 @@ class BlackBoxRestFitness : RestFitness() {
             var ok = false
 
             if (a is RestCallAction) {
-                        ok = handleRestCall(a, actionResults, chainState, cookies, tokens)
-                        actionResults[i].stopping = !ok
+                val executionTimeMs = measureTimeMillis {
+                    ok = handleRestCall(a, actionResults, chainState, cookies, tokens)
+                }
+                    a.executionTimeMs = executionTimeMs
+                    logger.info("executionTimeMs: $executionTimeMs, for action $i")
+                    actionResults[i].stopping = !ok
                 } else {
                     throw IllegalStateException("Cannot handle: ${a.javaClass}")
                 }
@@ -129,11 +140,11 @@ class BlackBoxRestFitness : RestFitness() {
             }
         }
 
-        val actions = individual?.seeActions()
+        val actions = individual.seeActions()
 
-        actions?.forEachIndexed { i, action ->
-            if (i < actionResults?.size) {
-                val actionResult = actionResults?.get(i).toString()
+        actions.forEachIndexed { i, action ->
+            if (i < actionResults.size) {
+                val actionResult = actionResults.get(i).toString()
                 val responseJson = actionResult.substringAfter("\n")
                 val trimmedJson = responseJson.substringBeforeLast(",")
                 val bodyParamsResponse = trimmedJson.substringAfter("bodyParamsResponse=")
@@ -158,10 +169,6 @@ class BlackBoxRestFitness : RestFitness() {
             }
         }
         handleResponseTargets(fv, individual.seeActions(), actionResults, listOf())
-
-        totalCounts.forEach { (resultType, count) ->
-        //    logger.info("resultType bb: $resultType, count: $count ")
-        }
 
         return EvaluatedIndividual(fv, individual as RestIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
     }

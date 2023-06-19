@@ -71,12 +71,9 @@ class RestResourceFitness : AbstractRestFitness<RestIndividual>() {
                 registerNewAction(a, indexOfAction)
 
                 var ok = false
-                logger.info("check ok 1, $ok")
 
                 if (a is RestCallAction) {
                     ok = handleRestCall(a, actionResults, chainState, cookies, tokens)
-                    logger.info("check ok 2, $ok")
-                    logger.info("check action aaaaaaaaa------------, ${a.getFormattedParameters().map { it.toString() }}")
                     // update creation of resources regarding response status
                     val restActionResult = actionResults.filterIsInstance<RestCallResult>()[indexOfAction]
                     call.getResourceNode().confirmFailureCreationByPost(call, a, restActionResult)
@@ -86,15 +83,11 @@ class RestResourceFitness : AbstractRestFitness<RestIndividual>() {
                 }
 
                 if (!ok) {
-                    logger.info("check ok 3, $ok")
-                    logger.info("check terminated, $terminated")
                     terminated = true
                     break
                 }
-                logger.info("check indexOfAction, $indexOfAction")
                 indexOfAction++
             }
-            logger.info("check terminated---, $terminated")
             if(terminated)
                 break
         }

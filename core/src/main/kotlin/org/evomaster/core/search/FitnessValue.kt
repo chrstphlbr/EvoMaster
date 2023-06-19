@@ -133,7 +133,6 @@ class FitnessValue(
 
     fun computeFitnessScore(): Double {
         val reachedTargetKeys = reachedTargets()
-        logger.info("reachedTargetKeys: ${reachedTargetKeys}")
 
         // Return the final fitness score
         return targets.values.map { h -> h.distance }.sum()
@@ -419,7 +418,6 @@ class FitnessValue(
         }
 
         val extra = compareExtraToMinimize(target, other, strategy)
-        logger.info("extra: $extra")
         return betterThan(target =target, heuristics = z, size = other.size, extra = extra, minimumSize = minimumSize, bloatControlForSecondaryObjective = bloatControlForSecondaryObjective)
     }
 
@@ -432,7 +430,6 @@ class FitnessValue(
         if (z != v) return false
 
         val extra = compareExtraToMinimize(target, other, strategy)
-        logger.info("extra: $extra")
 
         //WARN: cannot really do this unless we update betterThan as well.
         //      But unclear if really make sense when considering specific targets
@@ -453,13 +450,11 @@ class FitnessValue(
 
     private fun betterThan(target: Int, heuristics: Double, size: Double, extra: Int, bloatControlForSecondaryObjective: Boolean, minimumSize: Int) : Boolean{
 
-        logger.info("target; $target")
         if (log.isTraceEnabled){
             log.trace("for target{}, checking betterThan with extras and extra is {}", target, extra)
         }
 
         val v = getHeuristic(target)
-        logger.info("getHeuristic; $v")
 
         if (v < heuristics) {
 
@@ -676,4 +671,19 @@ class FitnessValue(
         return "Keys: $keys \n \n Action Covered Targets: $coveredTargets \n \n Action Fitness Score: $fitness"
 
     }
+
+    fun getActionTarget(actionIndex: Int): Int {
+        val targetValues = targets.filterValues { it.actionIndex == actionIndex }
+        val coveredTargets = targetValues.values.filter { t -> t.distance == MAX_VALUE }.count()
+
+        return coveredTargets
+    }
+
+    fun getActionFitness(actionIndex: Int): Double {
+        val targetValues = targets.filterValues { it.actionIndex == actionIndex }
+        val fitness = targetValues.values.map { h -> h.distance }.sum()
+
+        return fitness
+    }
+
 }

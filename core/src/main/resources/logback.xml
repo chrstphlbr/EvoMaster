@@ -15,29 +15,17 @@
         </encoder>
     </appender>
 
-    <appender name="LOG_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <appender name="LOG_FILE" class="ch.qos.logback.core.FileAppender">
         <file>test_cases.txt</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>log.%d{yyyy-MM-dd}.%i.txt</fileNamePattern>
-            <maxFileSize>1024MB</maxFileSize>
-            <maxHistory>30</maxHistory>
-        </rollingPolicy>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
+        <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+            <maxFileSize>20480MB</maxFileSize> <!-- Updated to 20480MB (20 GB) -->
+        </triggeringPolicy>
     </appender>
 
-    <appender name="CSV_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>result_${new Date().time}.csv</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>result.%d{yyyy-MM-dd}.%i.csv</fileNamePattern>
-            <maxFileSize>10MB</maxFileSize>
-            <maxHistory>30</maxHistory>
-        </rollingPolicy>
-        <encoder>
-            <pattern>%msg%n</pattern>
-        </encoder>
-    </appender>
+
 
 
     <!-- Avoid annoying and pointless WARN messages from Governator -->
@@ -54,10 +42,6 @@
 
     <logger name="test_cases" level="info" additivity="false">
         <appender-ref ref="LOG_FILE" />
-    </logger>
-
-    <logger name="test_cases_csv" level="info" additivity="false">
-        <appender-ref ref="CSV_FILE" />
     </logger>
 
 </configuration>

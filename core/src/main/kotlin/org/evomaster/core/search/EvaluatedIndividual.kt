@@ -23,11 +23,37 @@ import org.slf4j.LoggerFactory
 import java.util.*
 import com.google.gson.Gson
 import org.evomaster.core.search.impact.impactinfocollection.ActionStructureImpact
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.io.BufferedWriter
+import java.io.FileWriter
+import java.io.IOException
+import java.io.File
 
 /**
  * EvaluatedIndividual allows to tracking its evolution.
  * Note that tracking EvaluatedIndividual can be enabled by set EMConfig.enableTrackEvaluatedIndividual true.
  */
+
+fun writeToCSV(filePath: String, headers: String, content: List<String>) {
+    val fileExists = Files.exists(Paths.get(filePath))
+
+    try {
+        BufferedWriter(FileWriter(filePath, true)).use { writer ->
+            if (!fileExists) {
+                writer.append(headers)
+                writer.newLine()
+            }
+            content.forEach { line ->
+                writer.append(line)
+                writer.newLine()
+            }
+        }
+    } catch (e: IOException) {
+        e.printStackTrace()
+    }
+}
+
 class EvaluatedIndividual<T>(var fitness: FitnessValue,
                              val individual: T,
                              /**
@@ -60,6 +86,8 @@ class EvaluatedIndividual<T>(var fitness: FitnessValue,
 
         private val log: Logger = LoggerFactory.getLogger(EvaluatedIndividual::class.java)
         private val logger = LoggerFactory.getLogger("test_cases")
+        private val loggerCsv = LoggerFactory.getLogger("test_cases_csv")
+
     }
 
     /**
@@ -104,7 +132,23 @@ class EvaluatedIndividual<T>(var fitness: FitnessValue,
                         totalCounts.forEach { (resultType, count) ->
                         //    logger.info("resultType ev: $resultType, count: $count ")
                         }
-                                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" +
+                        //loggerCsv.info("${individual.index}, ${actions.mapIndexed { i, action -> "Action nr. $i: $action, ${fitness.getTargetsInfoByAction(i)}, ${fitness.coveredTargets()}" }}")
+                        val headers = "IndividualIndex;ActionIndex;StatusCode;Predicted;InvokedRules;PassRules;NotAppliedRules;FailRules;WarningRules;FitnessValue;FitnessScore;CoveredTargets;PredictionTimeMs;ExecutionTimeMs"
+                        val lines = actions.mapIndexed { i, action ->
+                            val transformedResults = results.map { it.copy() }
+                            val result: ActionResult = if (i < transformedResults.size) transformedResults[i] else RestCallResult()
+                            val ruleInfo = results[i].totalCounts
+                            //logger.info("ruleinfo: $ruleInfo")
+                            val nrInvokedRules = ruleInfo["invokedRules"]?:0
+                            val nrInf = ruleInfo["INFO"]?:0
+                            val nrNA = ruleInfo["NOT_APPLIED"]?:0
+                            val nrErr= ruleInfo["ERROR"]?:0
+                            val nrWar = ruleInfo["WARNING"]?:0
+
+                            "${individual.index};$i;${result.getResultValue("STATUS_CODE")};${action.predicted};${nrInvokedRules};${nrInf};${nrNA};${nrErr};${nrWar};${fitness.size};${fitness.getActionFitness(i)};${fitness.getActionTarget(i)};${action.predictionTimeMs};${action.executionTimeMs}"
+                        }
+                        writeToCSV("evaluated-individual.csv", headers, lines)
+                        logger.info(" \n \n Individual (Evaluated Test) nr. ${individual.index}: ${actions.mapIndexed { i, action -> " \n \n Action nr. $i: $action \n  \n ${fitness.getTargetsInfoByAction(i)} \n" +
                                                  "  \n -> *** BODY PARAMS ***  \n \n ${action.getFormattedParameters().map { it.toString() }} \n  \n -> *** RESPONSE ***  \n \n ${if (i < results.size) results[i] else "No result available"}" }} \n  \n" +
                                                                 "* Fitness Score: ${fitness.computeFitnessScore()} \n" +
                                                               "* Fitness Value: ${fitness.size} \n" +
