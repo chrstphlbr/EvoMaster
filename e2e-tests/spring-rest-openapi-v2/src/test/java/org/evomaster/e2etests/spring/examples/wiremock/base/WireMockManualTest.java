@@ -6,6 +6,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.extension.responsetemplating.ResponseTemplateTransformer;
 import io.restassured.http.ContentType;
+import org.evomaster.ci.utils.CIUtils;
 import org.evomaster.e2etests.spring.examples.SpringTestBase;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,6 +23,9 @@ public class WireMockManualTest extends SpringTestBase {
 
     @BeforeAll
     public static void initClass() throws Exception {
+        WireMockController wireMockController = new WireMockController();
+        SpringTestBase.initClass(wireMockController);
+
         // DNS cache manipulator sets the IP for foo.bar to a different loopback address
         DnsCacheManipulator.setDnsCache("foo.bar", "127.0.0.2");
 
@@ -50,8 +54,6 @@ public class WireMockManualTest extends SpringTestBase {
                         .withStatus(200)
                         .withBody("Not found!!")));
 
-        WireMockController wireMockController = new WireMockController();
-        SpringTestBase.initClass(wireMockController);
     }
 
     @AfterAll
@@ -67,18 +69,19 @@ public class WireMockManualTest extends SpringTestBase {
                 .get(baseUrlOfSut + "/api/wiremock/equalsFoo/bar")
                 .then()
                 .statusCode(200)
-                .body("valid", is(false));
+                .body(is("false"));
 
         given().accept(ContentType.JSON)
                 .get(baseUrlOfSut + "/api/wiremock/equalsFoo/foo")
                 .then()
                 .statusCode(200)
-                .body("valid", is(true));
+                .body(is("true"));
 
     }
 
     @Test
     public void testExternalCall() {
+
         /*
          * The test will check whether the external call is a success or
          * not. If the target host replaced with the Wiremock, it'll respond
@@ -88,6 +91,6 @@ public class WireMockManualTest extends SpringTestBase {
                 .get(baseUrlOfSut + "/api/wiremock/external")
                 .then()
                 .statusCode(200)
-                .body("valid", is(true));
+                .body(is("true"));
     }
 }

@@ -217,6 +217,9 @@ class Randomness {
     }
 
     fun randomizeBoundedIntAndLong(value: Long, min: Long, max: Long, forceNewValue: Boolean) : Long{
+
+        if (min == max) return min
+
         val z = 1000L
         val range = calculateIncrement(min, max, 1L)
 
@@ -239,6 +242,7 @@ class Randomness {
             a = min
             b = max
         }
+
 
         return if (forceNewValue) {
             nextLong(a, b, value)
@@ -337,10 +341,10 @@ class Randomness {
      * Note: as [K] is used as a key, make sure that [equals] and [hashCode]
      * are well defined for it (eg, no problem if it is a [Int] or a [String])
      */
-    fun <K> chooseByProbability(map: Map<K, Float>): K {
+    fun <K> chooseByProbability(map: Map<K, Double>): K {
 
-        val randFl = random.nextFloat() * map.values.sum()
-        var temp = 0.toFloat()
+        val randFl = random.nextDouble() * map.values.sum()
+        var temp = 0.0
         var found = map.keys.first()
 
         for ((k, v) in map) {
@@ -380,6 +384,11 @@ class Randomness {
 
         val index = random.nextInt(index)
         return list[index]
+    }
+
+
+    fun choose(range: IntRange) : Int{
+        return nextInt(range.first, range.last)
     }
 
     fun <T> choose(list: List<T>): T {

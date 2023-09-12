@@ -15,6 +15,8 @@ import org.evomaster.core.output.OutputFormat
 import org.evomaster.core.output.TestSuiteSplitter
 import org.evomaster.core.output.clustering.SplitResult
 import org.evomaster.core.output.service.TestSuiteWriter
+import org.evomaster.core.problem.externalservice.httpws.service.HarvestActualHttpWsResponseHandler
+import org.evomaster.core.problem.externalservice.httpws.service.HttpWsExternalServiceHandler
 import org.evomaster.core.problem.graphql.GraphQLIndividual
 import org.evomaster.core.problem.graphql.service.GraphQLBlackBoxModule
 import org.evomaster.core.problem.graphql.service.GraphQLModule
@@ -25,10 +27,12 @@ import org.evomaster.core.problem.rest.service.ResourceRestModule
 import org.evomaster.core.problem.rest.service.RestModule
 import org.evomaster.core.problem.rpc.RPCIndividual
 import org.evomaster.core.problem.rpc.service.RPCModule
-import org.evomaster.core.problem.web.service.WebModule
+import org.evomaster.core.problem.webfrontend.WebIndividual
+import org.evomaster.core.problem.webfrontend.service.WebModule
 import org.evomaster.core.remote.NoRemoteConnectionException
 import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.remote.service.RemoteController
+import org.evomaster.core.remote.service.RemoteControllerImplementation
 import org.evomaster.core.search.Solution
 import org.evomaster.core.search.algorithms.MioAlgorithm
 import org.evomaster.core.search.algorithms.MosaAlgorithm
@@ -56,6 +60,10 @@ class Main {
 
                 printLogo()
                 printVersion()
+
+                if(!JdkIssue.checkAddOpens()){
+                    return
+                }
 
                 /*
                     Before running anything, check if the input
@@ -153,6 +161,8 @@ class Main {
             val solution = run(injector, controllerInfo)
             val faults = solution.overall.potentialFoundFaults(idMapper)
 
+            resetExternalServiceHandler(injector)
+
             writeOverallProcessData(injector)
 
             writeDependencies(injector)
@@ -222,6 +232,7 @@ class Main {
                         val p = String.format("%.0f", (k.toDouble()/n) * 100 )
                         info("Successfully executed (no 'errors') $k endpoints out of $n ($p%)")
                     }
+                    else -> {}
                     //TODO others, eg RPC
                 }
 
@@ -249,7 +260,7 @@ class Main {
                  */
                 assert(!config.blackBox || config.bbExperiments)
 
-                val rc = RemoteController(base.getEMConfig())
+                val rc = RemoteControllerImplementation(base.getEMConfig())
 
                 rc.checkConnection()
 
@@ -272,6 +283,8 @@ class Main {
                     config.problemType = EMConfig.ProblemType.GRAPHQL
                 } else if (info.rpcProblem != null){
                     config.problemType = EMConfig.ProblemType.RPC
+                } else if (info.webProblem != null) {
+                    config.problemType = EMConfig.ProblemType.WEBFRONTEND
                 } else {
                     throw IllegalStateException("Can connect to the EM Driver, but cannot infer the 'problemType'")
                 }
@@ -285,10 +298,10 @@ class Main {
                 EMConfig.ProblemType.REST -> {
                     if (config.blackBox) {
                         BlackBoxRestModule(config.bbExperiments)
-                    } else if (config.resourceSampleStrategy == EMConfig.ResourceSamplingStrategy.NONE) {
-                        RestModule()
-                    } else {
+                    } else if (config.isEnabledResourceStrategy()) {
                         ResourceRestModule()
+                    } else {
+                        RestModule()
                     }
                 }
 
@@ -308,7 +321,10 @@ class Main {
                     }
                 }
 
-                EMConfig.ProblemType.WEB -> WebModule()
+                EMConfig.ProblemType.WEBFRONTEND ->{
+                    //TODO black-box mode
+                    WebModule()
+                }
 
                 //this should never happen, unless we add new type and forget to add it here
                 else -> throw IllegalStateException("Unrecognized problem type: ${config.problemType}")
@@ -398,6 +414,25 @@ class Main {
             }
         }
 
+        private fun getAlgorithmKeyWeb(config: EMConfig): Key<out SearchAlgorithm<WebIndividual>> {
+
+            return when {
+                config.blackBox || config.algorithm == EMConfig.Algorithm.RANDOM ->
+                    Key.get(object : TypeLiteral<RandomAlgorithm<WebIndividual>>() {})
+
+                config.algorithm == EMConfig.Algorithm.MIO ->
+                    Key.get(object : TypeLiteral<MioAlgorithm<WebIndividual>>() {})
+
+                config.algorithm == EMConfig.Algorithm.WTS ->
+                    Key.get(object : TypeLiteral<WtsAlgorithm<WebIndividual>>() {})
+
+                config.algorithm == EMConfig.Algorithm.MOSA ->
+                    Key.get(object : TypeLiteral<MosaAlgorithm<WebIndividual>>() {})
+
+                else -> throw IllegalStateException("Unrecognized algorithm ${config.algorithm}")
+            }
+        }
+
         private fun getAlgorithmKeyRest(config: EMConfig): Key<out SearchAlgorithm<RestIndividual>> {
 
             return when {
@@ -430,6 +465,7 @@ class Main {
                 EMConfig.ProblemType.REST -> getAlgorithmKeyRest(config)
                 EMConfig.ProblemType.GRAPHQL -> getAlgorithmKeyGraphQL(config)
                 EMConfig.ProblemType.RPC -> getAlgorithmKeyRPC(config)
+                EMConfig.ProblemType.WEBFRONTEND -> getAlgorithmKeyWeb(config)
                 else -> throw IllegalStateException("Unrecognized problem type ${config.problemType}")
             }
 
@@ -440,6 +476,11 @@ class Main {
             val solutions = imp.search { solution: Solution<*>,
                                          snapshotTimestamp: String ->
                 writeTestsAsSnapshots(injector, solution, controllerInfo, snapshotTimestamp)
+            }.also {
+                if (config.doHarvestActualResponse()){
+                    val hp = injector.getInstance(HarvestActualHttpWsResponseHandler::class.java)
+                    hp.shutdown()
+                }
             }
 
             LoggingUtil.getInfoLogger().info("Finished generating test cases")
@@ -478,7 +519,7 @@ class Main {
             val rc = injector.getInstance(RemoteController::class.java)
 
             val dto = rc.getControllerInfo() ?: throw IllegalStateException(
-                    "Cannot retrieve Remote Controller info from ${rc.host}:${rc.port}")
+                    "Cannot retrieve Remote Controller info from ${rc.address()}")
 
             if (dto.isInstrumentationOn != true) {
                 LoggingUtil.getInfoLogger().warn("The system under test is running without instrumentation")
@@ -497,7 +538,7 @@ class Main {
 
             val config = injector.getInstance(EMConfig::class.java)
 
-            if (config.outputExecutedSQL != EMConfig.OutputExecutedSQL.ALL_AT_END) {
+            if (config.outputExecutedSQL != EMConfig.OutputExecutedSQL.ALL_AT_END && !config.recordExecutedMainActionInfo) {
                 return
             }
             val reporter = injector.getInstance(ExecutionInfoReporter::class.java)
@@ -595,7 +636,23 @@ class Main {
                     }
                 }
 
-            }else {
+            }else if (config.problemType == EMConfig.ProblemType.GRAPHQL) {
+                when(config.testSuiteSplitType){
+                    EMConfig.TestSuiteSplitType.NONE -> writer.writeTests(solution, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath,)
+                    //EMConfig.TestSuiteSplitType.CLUSTER -> throw IllegalStateException("GraphQL problem does not support splitting tests by cluster at this time")
+                    //EMConfig.TestSuiteSplitType.CODE ->
+                    else -> {
+                        //throw IllegalStateException("GraphQL problem does not support splitting tests by code at this time")
+                        val splitResult = TestSuiteSplitter.split(solution, config)
+                        splitResult.splitOutcome.filter{ !it.individuals.isNullOrEmpty() }
+                                .forEach { writer.writeTests(it, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath, snapshot ) }
+                    }
+                    /*
+                      GraphQL could be split by code (where code is available and trustworthy)
+                     */
+                }
+            } else
+            {
                 /*
                     TODO refactor all the PartialOracle stuff that is meant for only REST
                  */
@@ -694,6 +751,15 @@ class Main {
             val writer = injector.getInstance(TestSuiteWriter::class.java)
             assert(controllerInfoDto == null || controllerInfoDto.fullName != null)
             writer.writeTests(splitResult.executiveSummary, controllerInfoDto?.fullName,controllerInfoDto?.executableFullPath, snapshotTimestamp)
+        }
+
+        /**
+         * To reset external service handler to clear the existing
+         * WireMock instances to free up the IP addresses.
+         */
+        private fun resetExternalServiceHandler(injector: Injector) {
+            val externalServiceHandler = injector.getInstance(HttpWsExternalServiceHandler::class.java)
+            externalServiceHandler.reset()
         }
     }
 }

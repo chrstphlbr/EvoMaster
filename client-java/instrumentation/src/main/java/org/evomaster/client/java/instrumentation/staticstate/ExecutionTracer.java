@@ -7,7 +7,10 @@ import org.evomaster.client.java.instrumentation.shared.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Methods of this class will be injected in the SUT to
@@ -57,6 +60,9 @@ public class ExecutionTracer {
      */
     private static int actionIndex = 0;
 
+
+    private static String actionName = null;
+
     /**
      * A set of possible values used in the tests, needed for some kinds
      * of taint analyses
@@ -68,6 +74,9 @@ public class ExecutionTracer {
      */
     private static Map<String, String> externalServiceMapping = new HashMap<>();
 
+
+    private static Map<String, String> localAddressMapping = new HashMap<>();
+
     /**
      * Besides code coverage, there might be other events that we want to
      * keep track during test execution.
@@ -76,20 +85,33 @@ public class ExecutionTracer {
     private static final List<AdditionalInfo> additionalInfoList = new ArrayList<>();
 
     /**
+     * Keep track of threads left sleeping, as we will need to interrupt them
+     * to avoid issues (eg, out of resources and instrumentation collection when threads wake up
+     * during a different action)
+     */
+    private static final List<Thread> sleepingThreads = new CopyOnWriteArrayList<>();
+
+    /**
      * Keep track of expensive operations. Might want to skip doing them if too many.
      * This should be re-set for each action
      */
-    private static  int expensiveOperation = 0;
+    private static int expensiveOperation = 0;
 
     private static final Object lock = new Object();
 
-
+    private static List<ExternalService> skippedExternalServices = new CopyOnWriteArrayList<>();
     /**
      * One problem is that, once a test case is evaluated, some background tests might still be running.
      * We want to kill them to avoid issue (eg, when evaluating new tests while previous threads
      * are still running).
      */
     private static volatile boolean killSwitch = false;
+
+    /**
+     * When executing method replacements, keep track here of the caller class, ie the class name in which
+     * the method replacement took place.
+     */
+    private static volatile String lastCallerClass = null;
 
     static {
         reset();
@@ -100,13 +122,43 @@ public class ExecutionTracer {
         synchronized (lock) {
             objectiveCoverage.clear();
             actionIndex = 0;
+            actionName = null;
             additionalInfoList.clear();
             additionalInfoList.add(new AdditionalInfo());
             inputVariables = new HashSet<>();
             killSwitch = false;
             expensiveOperation = 0;
             executingAction = false;
+            sleepingThreads.clear();
+            lastCallerClass = null;
+            skippedExternalServices = new ArrayList<>();
         }
+    }
+
+
+    public static String getActionName() {
+        return actionName;
+    }
+
+
+    public static final String SET_LAST_CALLER_CLASS_METHOD_NAME = "setLastCallerClass";
+
+    public static final String SET_LAST_CALLER_CLASS_DESC = "(Ljava/lang/String;)V";
+
+    public static void setLastCallerClass(String className) {
+        lastCallerClass = ClassName.get(className).getFullNameWithDots();
+    }
+
+    public static ClassLoader getLastCallerClassLoader() {
+        return UnitsInfoRecorder.getInstance().getClassLoaders(getLastCallerClass()).get(0);
+    }
+
+    public static String getLastCallerClass() {
+        return lastCallerClass;
+    }
+
+    public static void reportSleeping() {
+        sleepingThreads.add(Thread.currentThread());
     }
 
     public static boolean isKillSwitch() {
@@ -115,6 +167,16 @@ public class ExecutionTracer {
 
     public static void setKillSwitch(boolean killSwitch) {
         ExecutionTracer.killSwitch = killSwitch;
+        if (killSwitch) {
+            synchronized (lock) {
+                for (Thread t : sleepingThreads) {
+                    if (t.isAlive()) {
+                        t.interrupt();
+                    }
+                }
+                sleepingThreads.clear();
+            }
+        }
     }
 
     public static boolean isExecutingInitSql() {
@@ -128,6 +190,7 @@ public class ExecutionTracer {
     public static boolean isExecutingAction() {
         return executingAction;
     }
+
 
     public static void setExecutingAction(boolean executingAction) {
         ExecutionTracer.executingAction = executingAction;
@@ -143,21 +206,25 @@ public class ExecutionTracer {
                 additionalInfoList.add(new AdditionalInfo());
             }
 
+            actionName = action.getName();
+
             if (action.getInputVariables() != null && !action.getInputVariables().isEmpty()) {
                 inputVariables = action.getInputVariables();
             }
 
             if (action.getIndex() == 0) {
                 externalServiceMapping = action.getExternalServiceMapping();
+                localAddressMapping = action.getLocalAddressMapping();
+                skippedExternalServices = action.getSkippedExternalServices();
             }
         }
     }
 
-    public static void increaseExpensiveOperationCount(){
+    public static void increaseExpensiveOperationCount() {
         expensiveOperation++;
     }
 
-    public static boolean isTooManyExpensiveOperations(){
+    public static boolean isTooManyExpensiveOperations() {
         return expensiveOperation >= 50;
     }
 
@@ -170,6 +237,52 @@ public class ExecutionTracer {
      */
     public static boolean isTaintInput(String input) {
         return TaintInputName.isTaintInput(input) || inputVariables.contains(input);
+    }
+
+    public static void handleExtraParamTaint(String left, String right) {
+
+        if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
+            //nothing to do?
+            return;
+        }
+
+        boolean taintedLeft = left.equals(TaintInputName.EXTRA_PARAM_TAINT);
+        boolean taintedRight = right.equals(TaintInputName.EXTRA_PARAM_TAINT);
+
+        if (taintedLeft && taintedRight) {
+            //nothing to do?
+            return;
+        }
+
+        if (taintedLeft) {
+            ExecutionTracer.addQueryParameter(right);
+        }
+        if (taintedRight) {
+            ExecutionTracer.addQueryParameter(left);
+        }
+    }
+
+    public static void handleExtraHeaderTaint(String left, String right) {
+
+        if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
+            //nothing to do?
+            return;
+        }
+
+        boolean taintedLeft = left.equals(TaintInputName.EXTRA_HEADER_TAINT);
+        boolean taintedRight = right.equals(TaintInputName.EXTRA_HEADER_TAINT);
+
+        if (taintedLeft && taintedRight) {
+            //nothing to do?
+            return;
+        }
+
+        if (taintedLeft) {
+            ExecutionTracer.addHeader(right);
+        }
+        if (taintedRight) {
+            ExecutionTracer.addHeader(left);
+        }
     }
 
     public static void handleTaintForStringEquals(String left, String right, boolean ignoreCase) {
@@ -197,6 +310,10 @@ public class ExecutionTracer {
                 return;
             }
 
+            if (shouldSkipTaint()) {
+                return;
+            }
+
             //TODO could have EQUAL_IGNORE_CASE
             String id = left + "___" + right;
             addStringSpecialization(left, new StringSpecializationInfo(StringSpecialization.EQUAL, id));
@@ -208,12 +325,35 @@ public class ExecutionTracer {
                 : StringSpecialization.CONSTANT;
 
         if (taintedLeft || taintedRight) {
+
+            if (shouldSkipTaint()) {
+                return;
+            }
+
             if (taintedLeft) {
                 addStringSpecialization(left, new StringSpecializationInfo(type, right));
             } else {
                 addStringSpecialization(right, new StringSpecializationInfo(type, left));
             }
         }
+    }
+
+    private static boolean shouldSkipTaint() {
+        /*
+            Very tricky... H2 can cache some results. When executing queries, it can check inputs in previous
+            queries to see if differences in results. but those could be tainted values... which mess up
+            the taint analysis :( so, as a special case, we need to skip it
+         */
+//        return Arrays.stream(Thread.currentThread().getStackTrace())
+//                .anyMatch(it -> it.getMethodName().equals("sameResultAsLast")
+//                        && it.getClassName().equals("org.h2.command.query.Query"));
+
+        /*
+            FIXME This does not really work right now, as SQL commands are put on a buffer and analyzed later.
+            Such analysis should be done somehow when SQL commands are intercepted, but it is quite a bit of refactoring
+            to pass around such info
+         */
+        return false;
     }
 
     public static TaintType getTaintType(String input) {
@@ -265,13 +405,17 @@ public class ExecutionTracer {
         getCurrentAdditionalInfo().addSpecialization(taintInputName, info);
     }
 
-    public static void addSqlInfo(SqlInfo info){
+    public static void addSqlInfo(SqlInfo info) {
         if (!executingInitSql)
             getCurrentAdditionalInfo().addSqlInfo(info);
     }
 
     public static void markLastExecutedStatement(String lastLine, String lastMethod) {
         getCurrentAdditionalInfo().pushLastExecutedStatement(lastLine, lastMethod);
+    }
+
+    public static String getLastExecutedStatement() {
+        return getCurrentAdditionalInfo().getLastExecutedStatement();
     }
 
     public static final String COMPLETED_LAST_EXECUTED_STATEMENT_NAME = "completedLastExecutedStatement";
@@ -367,7 +511,7 @@ public class ExecutionTracer {
             Considering the fact that the method has been executed, and so reached, cannot happen
             that any of the heuristic values is 0
          */
-        assert t.getOfTrue() != 0 && t.getOfFalse() !=0;
+        assert t.getOfTrue() != 0 && t.getOfFalse() != 0;
 
         String idTrue = ObjectiveNaming.methodReplacementObjectiveName(idTemplate, true, type);
         String idFalse = ObjectiveNaming.methodReplacementObjectiveName(idTemplate, false, type);
@@ -525,16 +669,70 @@ public class ExecutionTracer {
     }
 
     /**
+     * track what host uses the default WM
+     */
+    public static void addEmployedDefaultWMHost(ExternalServiceInfo hostInfo) {
+        getCurrentAdditionalInfo().addEmployedDefaultWM(hostInfo);
+    }
+
+    /**
      * Return the WireMock IP if there is a mapping for the hostname. If there is
      * no mapping NULL will be returned
      */
-    public static String getExternalMapping(String hostname) {
-        return externalServiceMapping.get(hostname);
+    public static String getExternalMapping(String signature) {
+        return externalServiceMapping.get(signature);
     }
 
-    public static boolean hasExternalMapping(String hostname) {
-        return externalServiceMapping.containsKey(hostname);
+    public static boolean hasExternalMapping(String signature) {
+        return externalServiceMapping.containsKey(signature);
     }
 
+    public static boolean hasMockServer(String hostname) {
+        return externalServiceMapping.containsValue(hostname);
+    }
+
+    /**
+     * Check whether there is a local IP address available for the given
+     * remote hostname.
+     */
+    public static boolean hasLocalAddress(String hostname) {
+        return localAddressMapping.containsKey(hostname);
+    }
+
+    /**
+     * Checks for any replacement available to given local IP address.
+     */
+    public static boolean hasLocalAddressReplacement(String localAddress) {
+        return localAddressMapping.containsValue(localAddress);
+    }
+
+    /**
+     * Return the respective remote hostname for the given local IP address
+     */
+    public static String getRemoteHostname(String localAddress) {
+        return localAddressMapping.entrySet()
+                .stream()
+                .filter(e -> e.getValue().equals(localAddress))
+                .map(Map.Entry::getKey)
+                .findFirst().get().toString();
+    }
+
+    public static String getLocalAddress(String hostname) {
+        return localAddressMapping.get(hostname);
+    }
+
+    public static boolean skipHostname(String hostname) {
+        return skippedExternalServices
+                .stream()
+                .filter(e -> e.getHostname().equals(hostname.toLowerCase()))
+                .count() > 0;
+    }
+
+    public static boolean skipHostnameAndPort(String hostname, int port) {
+        return skippedExternalServices
+                .stream()
+                .filter(e -> e.getHostname().equals(hostname.toLowerCase()) && e.getPort() == port)
+                .count() > 0;
+    }
 
 }

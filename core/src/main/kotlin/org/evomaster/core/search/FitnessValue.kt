@@ -5,10 +5,13 @@ import org.evomaster.core.EMConfig
 import org.evomaster.core.database.DatabaseExecution
 import org.evomaster.core.EMConfig.SecondaryObjectiveStrategy.*
 import org.evomaster.core.Lazy
+import org.evomaster.core.problem.externalservice.httpws.HttpWsExternalService
+import org.evomaster.core.problem.externalservice.httpws.HttpExternalServiceRequest
 import org.evomaster.core.search.service.IdMapper
 import org.evomaster.core.search.service.mutator.EvaluatedMutation
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -35,6 +38,11 @@ class FitnessValue(
         fun isMaxValue(value: Double) = value == MAX_VALUE
 
         private val log: Logger = LoggerFactory.getLogger(FitnessValue::class.java)
+
+        /**
+         * represent that boot-time info is unavailable to collect
+         */
+        const val BOOT_TIME_INFO_UNAVAILABLE = -1
     }
 
     /**
@@ -72,6 +80,20 @@ class FitnessValue(
     private val aggregatedFailedWhere: MutableMap<String, Set<String>> = mutableMapOf()
 
     /**
+     * To keep track of accessed external services prevent from adding them again
+     * TODO: This is not completed, not need to consider for review for now
+     *
+     * Contains the absolute URLs of what accessed by the SUT.
+     * The key is the action index.
+     */
+    private val accessedExternalServiceRequests: MutableMap<Int, List<HttpExternalServiceRequest>> = mutableMapOf()
+
+    /**
+     * a list of external services which are re-direct to the default WM
+     */
+    private val accessedDefaultWM : MutableMap<Int,Map<String, HttpWsExternalService>> = mutableMapOf()
+
+    /**
     * How long it took to evaluate this fitness value.
     */
     var executionTimeMs : Long = Long.MAX_VALUE
@@ -84,6 +106,8 @@ class FitnessValue(
         copy.databaseExecutions.putAll(this.databaseExecutions) //note: DatabaseExecution supposed to be immutable
         copy.aggregateDatabaseData()
         copy.executionTimeMs = executionTimeMs
+        copy.accessedExternalServiceRequests.putAll(this.accessedExternalServiceRequests)
+        copy.accessedDefaultWM.putAll(this.accessedDefaultWM.toMap())
         return copy
     }
 
@@ -150,13 +174,17 @@ class FitnessValue(
 
     /**
      * this method is to report the union results with targets at boot-time
+     * @param prefix specifies the target with specific prefix  to return (eg Line), null means return all types of targets
+     * @param idMapper contains info of all targets
+     * @param bootTimeInfoDto represents info of boot-time targets
      *
      * @return a number of targets covered during various phases ie,
-     *          at boot-time (negative means that the boot-time info is unavailable), during search, and at the end
+     * boot-time (negative means that the boot-time info is unavailable [BOOT_TIME_INFO_UNAVAILABLE]) and search time
      */
-    fun unionWithBootTimeCoveredTargets(prefix: String?, idMapper: IdMapper, bootTimeInfoDto: BootTimeInfoDto?, unavailableBootTime: Int = -1): TargetStatistic{
+    fun unionWithBootTimeCoveredTargets(prefix: String?, idMapper: IdMapper, bootTimeInfoDto: BootTimeInfoDto?): TargetStatistic{
         if (bootTimeInfoDto?.targets == null){
-            return (if (prefix == null) coveredTargets() else coveredTargets(prefix, idMapper)).run { TargetStatistic(unavailableBootTime,this) }
+            return (if (prefix == null) coveredTargets() else coveredTargets(prefix, idMapper)).run { TargetStatistic(
+                BOOT_TIME_INFO_UNAVAILABLE,this, max(BOOT_TIME_INFO_UNAVAILABLE,0)+this) }
         }
         val bootTime = bootTimeInfoDto.targets.filter { it.value == MAX_VALUE && (prefix == null || it.descriptiveId.startsWith(prefix)) }
         // counter for duplicated targets
@@ -167,11 +195,25 @@ class FitnessValue(
                     duplicatedcounter++
             }
         }
+        /*
+        related to task https://trello.com/c/EoWcV6KX/810-issue-with-assertion-checks-in-e2e
+
+        targets covered during authentication now are counted as part of boot-time targets
+        that violates an assertion as follows, "there should not exist any duplicated targets existed in both boot-time and search-time"
+
+        TODO
+        to better distinguish the targets covered by authentication handling, we might need to manipulate
+        the index of execution main action, and add another target categories (eg, authentication or pre-setup)
+        However, this fix will affect many codes in core, driver also javascript driver.
+        then comment the assertion out, and fix it later
+
         Lazy.assert {
             // there should not exist any duplicated targets between boot-time and search-time
             duplicatedcounter == 0
         }
-        return TargetStatistic(bootTime.size, searchTime)
+
+        */
+        return TargetStatistic(bootTime.size, searchTime, bootTime.size + searchTime - duplicatedcounter)
     }
 
     fun coverTarget(id: Int) {
@@ -655,4 +697,29 @@ class FitnessValue(
     fun getTargetsByAction(actionIndex : Int) : Set<Int> {
         return targets.filterValues { it.actionIndex == actionIndex }.keys
     }
+
+    fun getViewAccessedExternalServiceRequests() = accessedExternalServiceRequests
+
+    fun registerExternalServiceRequest(actionIndex: Int, requests: List<HttpExternalServiceRequest>){
+        if(accessedExternalServiceRequests.containsKey(actionIndex)){
+            throw IllegalArgumentException("Action index $actionIndex is already handled")
+        }
+        if(requests.isEmpty()){
+            throw IllegalArgumentException("No URLs as input")
+        }
+        accessedExternalServiceRequests[actionIndex] = requests
+    }
+
+    fun registerExternalRequestToDefaultWM(actionIndex: Int, info: Map<String, HttpWsExternalService>){
+        if(info.isEmpty()) return
+
+        if(accessedDefaultWM.containsKey(actionIndex)){
+            throw IllegalArgumentException("Action index $actionIndex is already handled")
+        }
+        // info from TestResult, no need to make the copy
+        accessedDefaultWM[actionIndex] = info
+    }
+
+    fun getViewExternalRequestToDefaultWMByAction(actionIndex: Int) = accessedDefaultWM[actionIndex]
+    fun getViewEmployedDefaultWM() = accessedDefaultWM.values.flatMap { it.values }
 }

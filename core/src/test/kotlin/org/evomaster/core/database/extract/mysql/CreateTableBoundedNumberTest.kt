@@ -3,8 +3,11 @@ package org.evomaster.core.database.extract.mysql
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.*
-import org.evomaster.core.search.gene.sql.SqlNullable
+import org.evomaster.core.search.gene.numeric.BigDecimalGene
+import org.evomaster.core.search.gene.numeric.DoubleGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
+import org.evomaster.core.search.gene.numeric.LongGene
+import org.evomaster.core.search.gene.optional.NullableGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -46,7 +49,7 @@ class CreateTableBoundedNumberTest : ExtractTestBaseMySQL() {
 
         val actions = builder.createSqlInsertionAction("BoundedNumberTable", setOf("*"))
 
-        actions[0].seeGenes().apply {
+        actions[0].seeTopGenes().apply {
             assertEquals(8, size)
             assertEquals(listOf("bc", "dd", "dc1", "dc2", "dc3", "dc4", "tc1", "tc2"), map { it.name })
 
@@ -58,8 +61,8 @@ class CreateTableBoundedNumberTest : ExtractTestBaseMySQL() {
             }
 
             val dd = this[1]
-            assertTrue(dd is SqlNullable)
-            (dd as SqlNullable).apply {
+            assertTrue(dd is NullableGene)
+            (dd as NullableGene).apply {
                 assertTrue(this.gene is DoubleGene)
                 assertNull((this.gene as DoubleGene).scale)
             }

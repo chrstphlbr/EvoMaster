@@ -96,6 +96,8 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
     private fun preSteps(skip : List<String> = listOf(), doesInvolveDatabase : Boolean = false, doesAppleNameMatching : Boolean = false, probOfDep : Double = 0.0){
         config.probOfApplySQLActionToCreateResources = if(doesInvolveDatabase) 0.5 else 0.0
         config.doesApplyNameMatching = doesAppleNameMatching
+        if (doesInvolveDatabase)
+            config.generateSqlDataWithSearch = true
 
         config.probOfEnablingResourceDependencyHeuristics = probOfDep
 
@@ -106,7 +108,7 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
         }
 
 
-        sampler.initialize(getSwaggerLocation(), skip, sqlBuilder)
+        sampler.initialize(getSwaggerLocation(), config, skip, sqlBuilder)
 
     }
 
@@ -202,7 +204,7 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
         if(resourceCalls.seeActions(ActionFilter.ONLY_SQL).isEmpty()) return false
         if(!(resourceCalls.seeActions(ActionFilter.ONLY_SQL) as List<DbAction>).any { it.table.name.equals(tableName, ignoreCase = true) }) return false
 
-        val dbGene = (resourceCalls.seeActions(ActionFilter.ONLY_SQL) as List<DbAction>).find { it.table.name.equals(tableName, ignoreCase = true) }!!.seeGenes().find { it.name.equals(colName, ignoreCase = true) }?: return false
+        val dbGene = (resourceCalls.seeActions(ActionFilter.ONLY_SQL) as List<DbAction>).find { it.table.name.equals(tableName, ignoreCase = true) }!!.seeTopGenes().find { it.name.equals(colName, ignoreCase = true) }?: return false
 
         return resourceCalls.seeActions(ActionFilter.ONLY_SQL).filterIsInstance<RestCallAction>().flatMap { it.parameters.filter { it.name == paramName } }.all { p->
             ParamUtil.compareGenesWithValue(ParamUtil.getValueGene(dbGene!!), ParamUtil.getValueGene(p.gene))
@@ -311,6 +313,11 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
         val individual = sampler.sampleWithMethodAndDependencyOption(ResourceSamplingMethod.S1dR, false)
         assertNotNull(individual)
         assertEquals(1, individual!!.getResourceCalls().size)
+
+        if(! individual.isInitialized())
+            individual.doInitialize(randomness)
+        individual.doInitializeLocalId()
+
         val addSpec = MutatedGeneSpecification()
         val evaluatedIndividual = EvaluatedIndividual(FitnessValue(0.0), individual, generateIndividualResults(individual))
         structureMutator.mutateRestResourceCalls(individual,  RestResourceStructureMutator.MutationType.ADD, addSpec)
@@ -366,7 +373,7 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
         val callA = rm.getResourceNodeFromCluster(resource).run {
             createRestResourceCallBasedOnTemplate(randomness.choose(getTemplates().values).template, randomness, config.maxTestSize)
         }
-        val ind = RestIndividual(mutableListOf(callA), SampleType.SMART_RESOURCE)
+        val ind = RestIndividual(mutableListOf(callA.copy()), SampleType.SMART_RESOURCE)
 
         TestUtils.handleFlaky {
             structureMutator.mutateRestResourceCalls(ind, RestResourceStructureMutator.MutationType.ADD)
@@ -409,16 +416,23 @@ abstract class ResourceTestBase : ExtractTestBaseH2(), ResourceBasedTestInterfac
 
         val targetsOfC = callC.seeActions(ActionFilter.NO_SQL).mapIndexed { index, _ -> targetsOfB.last() + 1 + index  }
 
-        val ind1With2Resources = RestIndividual(mutableListOf(callB, callA), SampleType.SMART_RESOURCE)
+        val ind1With2Resources = RestIndividual(mutableListOf(callB.copy(), callA.copy()), SampleType.SMART_RESOURCE)
+        if(!ind1With2Resources.isInitialized())
+            ind1With2Resources.doInitialize()
+        ind1With2Resources.doInitializeLocalId()
 
-        val fake1fitnessValue = FitnessValue(ind1With2Resources!!.seeActions().size.toDouble())
+        val fake1fitnessValue = FitnessValue(ind1With2Resources!!.seeAllActions().size.toDouble())
         targetsOfB.plus(targetsOfA).forEachIndexed { index, i ->
             fake1fitnessValue.updateTarget(i, 0.2, index)
         }
         val fakeEvalInd1 = EvaluatedIndividual(fake1fitnessValue, ind1With2Resources, generateIndividualResults(ind1With2Resources))
 
-        val ind2With2Resources = RestIndividual(mutableListOf(callC, callA), SampleType.SMART_RESOURCE)
-        val fake2fitnessValue = FitnessValue(ind2With2Resources!!.seeActions().size.toDouble())
+        val ind2With2Resources = RestIndividual(mutableListOf(callC.copy(), callA.copy()), SampleType.SMART_RESOURCE)
+        if(!ind2With2Resources.isInitialized())
+            ind2With2Resources.doInitialize()
+        ind2With2Resources.doInitializeLocalId()
+
+        val fake2fitnessValue = FitnessValue(ind2With2Resources!!.seeAllActions().size.toDouble())
         targetsOfC.plus(targetsOfA).forEachIndexed { index, i ->
             fake2fitnessValue.updateTarget(i, 0.3, index)
         }

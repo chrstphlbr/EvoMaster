@@ -3,12 +3,15 @@ package org.evomaster.core.problem.httpws.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.evomaster.client.java.controller.api.dto.*
 import org.evomaster.core.StaticCounter
+import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.CookieWriter
 import org.evomaster.core.output.TokenWriter
 import org.evomaster.core.problem.api.service.ApiWsFitness
-import org.evomaster.core.problem.api.service.ApiWsIndividual
+import org.evomaster.core.problem.api.ApiWsIndividual
+import org.evomaster.core.problem.httpws.HttpWsAction
+import org.evomaster.core.problem.httpws.HttpWsCallResult
 import org.evomaster.core.problem.rest.*
 import org.evomaster.core.problem.rest.param.HeaderParam
 import org.evomaster.core.remote.SutProblemException
@@ -248,9 +251,7 @@ abstract class HttpWsFitness<T>: ApiWsFitness<T>() where T : Individual {
     }
 
 
-    protected fun registerNewAction(action: Action, index: Int){
-        rc.registerNewAction(getActionDto(action, index))
-    }
+
 
 
     @Deprecated("replaced by doDbCalls()")
@@ -258,12 +259,12 @@ abstract class HttpWsFitness<T>: ApiWsFitness<T>() where T : Individual {
 
         if (log.isTraceEnabled){
             log.trace("do {} InitializingActions: {}", ind.seeInitializingActions().size,
-                ind.seeInitializingActions().joinToString(","){
+                ind.seeInitializingActions().filterIsInstance<DbAction>().joinToString(","){
                     it.getResolvedName()
                 })
         }
 
-        if (ind.seeInitializingActions().none { !it.representExistingData }) {
+        if (ind.seeInitializingActions().filterIsInstance<DbAction>().none { !it.representExistingData }) {
             /*
                 We are going to do an initialization of database only if there
                 is data to add.
@@ -273,7 +274,7 @@ abstract class HttpWsFitness<T>: ApiWsFitness<T>() where T : Individual {
             return
         }
 
-        val dto = DbActionTransformer.transform(ind.seeInitializingActions())
+        val dto = DbActionTransformer.transform(ind.seeInitializingActions().filterIsInstance<DbAction>())
         dto.idCounter = StaticCounter.getAndIncrease()
 
         val ok = rc.executeDatabaseCommand(dto)
@@ -285,7 +286,7 @@ abstract class HttpWsFitness<T>: ApiWsFitness<T>() where T : Individual {
 
 
 
-    protected fun handleAuth(a: HttpWsAction, builder: Invocation.Builder, cookies: Map<String, List<NewCookie>>, tokens: Map<String, String>) {
+    protected fun handleHeaders(a: HttpWsAction, builder: Invocation.Builder, cookies: Map<String, List<NewCookie>>, tokens: Map<String, String>) {
         a.auth.headers.forEach {
             builder.header(it.name, it.value)
         }
@@ -301,6 +302,7 @@ abstract class HttpWsFitness<T>: ApiWsFitness<T>() where T : Individual {
                 //TODO those should be skipped directly in the search, ie, right now they are useless genes
                 .filter { !prechosenAuthHeaders.contains(it.name) }
                 .filter { !(a.auth.jsonTokenPostLogin != null && it.name.equals("Authorization", true)) }
+                .filter{ it.isInUse()}
                 .forEach {
                     builder.header(it.name, it.gene.getValueAsRawString())
                 }

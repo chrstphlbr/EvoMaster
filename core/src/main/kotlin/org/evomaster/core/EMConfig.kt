@@ -5,10 +5,12 @@ import joptsimple.OptionDescriptor
 import joptsimple.OptionParser
 import joptsimple.OptionSet
 import org.evomaster.client.java.controller.api.ControllerConstants
+import org.evomaster.client.java.instrumentation.shared.ObjectiveNaming
 import org.evomaster.client.java.instrumentation.shared.ReplacementCategory
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.OutputFormat
 import org.evomaster.core.search.impact.impactinfocollection.GeneMutationSelectionMethod
+import org.evomaster.core.search.service.IdMapper
 import org.slf4j.LoggerFactory
 import java.net.MalformedURLException
 import java.net.URL
@@ -39,7 +41,18 @@ class EMConfig {
 
         private const val headerRegex = "(.+:.+)|(^$)"
 
+        private const val targetSeparator = ";"
+        private const val targetNone = "\\b(None|NONE|none)\\b"
+        private const val targetPrefix = "\\b(Class|CLASS|class|Line|LINE|line|Branch|BRANCH|branch|MethodReplacement|METHODREPLACEMENT|method[r|R]eplacement|Success_Call|SUCCESS_CALL|success_[c|C]all|Local|LOCAL|local|PotentialFault|POTENTIALFAULT|potential[f|F]ault)\\b"
+        private const val targetExclusionRegex = "^($targetNone|($targetPrefix($targetSeparator$targetPrefix)*))\$"
+
         private const val maxTcpPort = 65535.0
+
+        /**
+         * Maximum possible length for strings.
+         * Really, having something longer would make little to no sense
+         */
+        const val stringLengthHardLimit = 20_000
 
         fun validateOptions(args: Array<String>): OptionParser {
 
@@ -254,6 +267,13 @@ class EMConfig {
             They can be check only once all fields have been updated
          */
 
+        if(!blackBox && bbSwaggerUrl.isNotBlank()){
+            throw IllegalArgumentException("'bbSwaggerUrl' should be set only in black-box mode")
+        }
+        if(!blackBox && bbTargetUrl.isNotBlank()){
+            throw IllegalArgumentException("'bbTargetUrl' should be set only in black-box mode")
+        }
+
         if (blackBox && !bbExperiments) {
 
             if(problemType == ProblemType.DEFAULT){
@@ -323,7 +343,7 @@ class EMConfig {
         if (doCollectImpact && !enableTrackEvaluatedIndividual)
             throw IllegalArgumentException("Impact collection should be applied together with tracking EvaluatedIndividual")
 
-        if (baseTaintAnalysisProbability > 0 && !useMethodReplacement) {
+        if (isEnabledTaintAnalysis() && !useMethodReplacement) {
             throw IllegalArgumentException("Base Taint Analysis requires 'useMethodReplacement' option")
         }
 
@@ -354,6 +374,18 @@ class EMConfig {
         if(!jaCoCo_on && ! jaCoCo_off){
             throw IllegalArgumentException("JaCoCo location for agent/cli and output options must be all set or all left empty")
         }
+
+        if(!taintOnSampling && useGlobalTaintInfoProbability > 0){
+            throw IllegalArgumentException("Need to activate taintOnSampling to use global taint info")
+        }
+
+        if(maxLengthForStringsAtSamplingTime > maxLengthForStrings){
+            throw IllegalArgumentException("Max length at sampling time $maxLengthForStringsAtSamplingTime" +
+                    " cannot be greater than maximum string length $maxLengthForStrings")
+        }
+
+        if (saveMockedResponseAsSeparatedFile && testResourcePathToSaveMockedResponse.isBlank())
+            throw IllegalArgumentException("testResourcePathToSaveMockedResponse cannot be empty if it is required to save mocked responses in separated files (ie, saveMockedResponseAsSeparatedFile=true)")
     }
 
     private fun checkPropertyConstraints(m: KMutableProperty<*>) {
@@ -486,9 +518,12 @@ class EMConfig {
                 throw IllegalArgumentException("Failed to handle property '${m.name}'", e)
             }
         }
+
+        // private set
+        excludedTargetsForImpactCollection = extractExcludedTargetsForImpactCollection()
     }
 
-    fun shouldGenerateSqlData() = generateSqlDataWithDSE || generateSqlDataWithSearch
+    fun shouldGenerateSqlData() = isMIO() && (generateSqlDataWithDSE || generateSqlDataWithSearch)
 
     fun experimentalFeatures(): List<String> {
 
@@ -756,9 +791,9 @@ class EMConfig {
     enum class ProblemType(private val experimental: Boolean) : WithExperimentalOptions {
         DEFAULT(experimental = false),
         REST(experimental = false),
-        GRAPHQL(experimental = true),
+        GRAPHQL(experimental = false),
         RPC(experimental = true),
-        WEB(experimental = true);
+        WEBFRONTEND(experimental = true);
         override fun isExperimental() = experimental
     }
 
@@ -892,6 +927,10 @@ class EMConfig {
     @Cfg("An id that will be part as a column of the statistics file (if any is generated)")
     var statisticsColumnId = "-"
 
+    @Cfg("When running experiments and statistic files are generated, all configs are saved." +
+            " So, this one can be used as extra label for classifying the experiment")
+    var labelForExperiments = "-"
+
     @Cfg("Whether we should collect data on the extra heuristics. Only needed for experiments.")
     var writeExtraHeuristicsFile = false
 
@@ -1012,6 +1051,16 @@ class EMConfig {
     var maxSqlInitActionsPerMissingData = 5
 
 
+    /*
+        Likely this should always be on by default... it would increase search space, but that would be handled by
+        adaptive hypermutation
+        TODO need experiments
+     */
+    @Experimental
+    @Cfg("Force filling data of all columns when inserting new row, instead of only minimal required set.")
+    var forceSqlAllColumnInsertion = false
+
+
     @Cfg("Maximum size (in bytes) that EM handles response payloads in the HTTP responses. " +
             "If larger than that, a response will not be stored internally in EM during the test generation. " +
             "This is needed to avoid running out of memory.")
@@ -1122,6 +1171,25 @@ class EMConfig {
 
     @Cfg("Enable to expand the genotype of REST individuals based on runtime information missing from Swagger")
     var expandRestIndividuals = true
+
+
+    @Experimental
+    @Cfg("Add an extra query param, to analyze how it is used/read by the SUT. Needed to discover new query params" +
+            " that were not specified in the schema.")
+    var extraQueryParam = false
+
+
+    @Experimental
+    @Cfg("Add an extra HTTP header, to analyze how it is used/read by the SUT. Needed to discover new headers" +
+            " that were not specified in the schema.")
+    var extraHeader = false
+
+
+    @Experimental
+    @Cfg("Percentage [0.0,1.0] of elapsed time in the search while trying to infer any extra query parameter and" +
+            " header. After this time has passed, those attempts stop. ")
+    @PercentageAsProbability(false)
+    var searchPercentageExtraHandling = 0.1
 
     enum class ResourceSamplingStrategy(val requiredArchive: Boolean = false) {
         NONE,
@@ -1493,6 +1561,28 @@ class EMConfig {
     @Probability
     var baseTaintAnalysisProbability = 0.9
 
+    @Experimental
+    @Cfg("Whether input tracking is used on sampling time, besides mutation time")
+    var taintOnSampling = false
+
+    @Probability
+    @Experimental
+    @Cfg("When sampling new individual, check whether to use already existing info on tainted values")
+    var useGlobalTaintInfoProbability = 0.0
+
+
+    @Min(0.0)
+    @Max(stringLengthHardLimit.toDouble())
+    @Cfg("The maximum length allowed for evolved strings. Without this limit, strings could in theory be" +
+            " billions of characters long")
+    var maxLengthForStrings = 200
+
+
+    @Min(0.0)
+    @Cfg("Maximum length when sampling a new random string. Such limit can be bypassed when a string is mutated.")
+    var maxLengthForStringsAtSamplingTime = 16
+
+
     @Cfg("Only used when running experiments for black-box mode, where an EvoMaster Driver would be present, and can reset state after each experiment")
     var bbExperiments = false
 
@@ -1560,7 +1650,7 @@ class EMConfig {
      *  but there are issues of performance (time and memory) in analysis of large graphs, that
      *  would need to be optimized
      */
-    val defaultTreeDepth = 3
+    val defaultTreeDepth = 4
 
     @Experimental
     @Cfg("Maximum tree depth in mutations/queries to be evaluated." +
@@ -1613,6 +1703,10 @@ class EMConfig {
     @Experimental
     @Cfg("Whether to generate RPC Assertions based on response instance")
     var enableRPCAssertionWithInstance = false
+
+    @Experimental
+    @Cfg("Whether to enable customized RPC Test output if 'customizeRPCTestOutput' is implemented")
+    var enableRPCCustomizedTestOutput = false
 
     @Experimental
     @Cfg("Specify a maximum number of data in a collection to be asserted in the generated tests." +
@@ -1699,6 +1793,67 @@ class EMConfig {
     @Regex("^127\\.((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){2}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\$")
     var externalServiceIP : String = "127.0.0.2"
 
+    @Experimental
+    @Cfg("Whether to apply customized method (i.e., implement 'customizeMockingRPCExternalService') to handle external services.")
+    var enableCustomizedExternalServiceHandling = false
+
+    @Experimental
+    @Cfg("Whether to save mocked responses as separated files")
+    var saveMockedResponseAsSeparatedFile = false
+
+    @Experimental
+    @Cfg("Specify test resource path where to save mocked responses as separated files")
+    var testResourcePathToSaveMockedResponse = ""
+
+    @Experimental
+    @Cfg("Whether to analyze how SQL databases are accessed to infer extra constraints from the business logic." +
+            " An example is javax/jakarta annotation constraints defined on JPA entities.")
+    @Probability(true)
+    var useExtraSqlDbConstraintsProbability = 0.0
+
+
+    @Cfg("a probability of harvesting actual responses from external services as seeds.")
+    @Experimental
+    @Probability(activating = true)
+    var probOfHarvestingResponsesFromActualExternalServices = 0.0
+
+    @Cfg("a probability of mutating mocked responses based on actual responses")
+    @Experimental
+    @Probability(activating = true)
+    var probOfMutatingResponsesBasedOnActualResponse = 0.0
+
+    @Cfg("Number of threads for external request harvester. No more threads than numbers of processors will be used.")
+    @Min(1.0)
+    @Experimental
+    var externalRequestHarvesterNumberOfThreads: Int = 2
+
+    @Cfg("Whether to employ constraints specified in API schema (e.g., OpenAPI) in test generation")
+    @Experimental
+    var enableSchemaConstraintHandling = false
+
+    @Cfg("a probability of enabling single insertion strategy to insert rows into database.")
+    @Experimental
+    @Probability(activating = true)
+    var probOfEnablingSingleInsertionForTable = 0.0
+
+    @Cfg("Whether to record info of executed actions during search")
+    @Experimental
+    var recordExecutedMainActionInfo = false
+
+    @Cfg("Specify a path to save all executed main actions to a file (default is 'executedMainActions.txt')")
+    @Experimental
+    var saveExecutedMainActionInfo = "executedMainActions.txt"
+
+
+    @Cfg("Specify prefixes of targets (e.g., MethodReplacement, Success_Call, Local) which will exclude in impact collection. " +
+            "Multiple exclusions should be separated with semicolon (i.e., ;).")
+    @Regex(targetExclusionRegex)
+    @Experimental
+    var excludeTargetsForImpactCollection = "${IdMapper.LOCAL_OBJECTIVE_KEY};${ObjectiveNaming.METHOD_REPLACEMENT}"
+
+    var excludedTargetsForImpactCollection : List<String> = extractExcludedTargetsForImpactCollection()
+        private set
+
     fun timeLimitInSeconds(): Int {
         if (maxTimeInSeconds > 0) {
             return maxTimeInSeconds
@@ -1723,29 +1878,35 @@ class EMConfig {
         return (hours * 60 * 60) + (minutes * 60) + seconds
     }
 
-    fun trackingEnabled() = enableTrackEvaluatedIndividual || enableTrackIndividual
+    fun trackingEnabled() =  isMIO() && (enableTrackEvaluatedIndividual || enableTrackIndividual)
 
     /**
      * impact info can be collected when archive-based solution is enabled or doCollectImpact
      */
-    fun isEnabledImpactCollection() = algorithm == Algorithm.MIO && doCollectImpact || isEnabledArchiveGeneSelection()
+    fun isEnabledImpactCollection() = isMIO() && doCollectImpact || isEnabledArchiveGeneSelection()
 
     /**
      * @return whether archive-based gene selection is enabled
      */
-    fun isEnabledArchiveGeneSelection() = algorithm == Algorithm.MIO && probOfArchiveMutation > 0.0 && adaptiveGeneSelectionMethod != GeneMutationSelectionMethod.NONE
+    fun isEnabledArchiveGeneSelection() = isMIO() && probOfArchiveMutation > 0.0 && adaptiveGeneSelectionMethod != GeneMutationSelectionMethod.NONE
 
     /**
      * @return whether archive-based gene mutation is enabled based on the configuration, ie, EMConfig
      */
-    fun isEnabledArchiveGeneMutation() = algorithm == Algorithm.MIO && archiveGeneMutation != ArchiveGeneMutation.NONE && probOfArchiveMutation > 0.0
+    fun isEnabledArchiveGeneMutation() = isMIO() && archiveGeneMutation != ArchiveGeneMutation.NONE && probOfArchiveMutation > 0.0
 
     fun isEnabledArchiveSolution() = isEnabledArchiveGeneMutation() || isEnabledArchiveGeneSelection()
+
+
+    /**
+     * @return whether enable resource-based method
+     */
+    fun isEnabledResourceStrategy() = isMIO() && resourceSampleStrategy != ResourceSamplingStrategy.NONE
 
     /**
      * @return whether enable resource-dependency based method
      */
-    fun isEnabledResourceDependency() = probOfSmartSampling > 0.0 && resourceSampleStrategy != ResourceSamplingStrategy.NONE
+    fun isEnabledResourceDependency() = isEnabledSmartSampling() && isEnabledResourceStrategy()
 
     /**
      * @return whether to generate SQL between rest actions
@@ -1763,4 +1924,40 @@ class EMConfig {
         if(instrumentMR_NET) categories.add(ReplacementCategory.NET.toString())
         return categories.joinToString(",")
     }
+
+    /**
+     * @return whether to handle the external service mocking
+     */
+    fun isEnabledExternalServiceMocking(): Boolean {
+        return externalServiceIPSelectionStrategy != ExternalServiceIPSelectionStrategy.NONE
+    }
+
+
+    private fun extractExcludedTargetsForImpactCollection() : List<String>{
+        if (excludeTargetsForImpactCollection.equals("None", ignoreCase = true)) return emptyList()
+        val excluded = excludeTargetsForImpactCollection.split(targetSeparator).map { it.lowercase() }.toSet()
+        return IdMapper.ALL_ACCEPTED_OBJECTIVE_PREFIXES.filter { excluded.contains(it.lowercase()) }
+    }
+
+    fun isEnabledMutatingResponsesBasedOnActualResponse() = isMIO() && (probOfMutatingResponsesBasedOnActualResponse > 0)
+
+    fun doHarvestActualResponse() : Boolean = isMIO() && (probOfHarvestingResponsesFromActualExternalServices > 0 || probOfMutatingResponsesBasedOnActualResponse > 0)
+
+    /**
+     * Check if the used algorithm is MIO.
+     * MIO is the default search algorithm in EM.
+     * Many techniques in EM are defined only for MIO, ie most improvements in EM are
+     * done as an extension of MIO.
+     */
+    fun isMIO() = algorithm == Algorithm.MIO
+
+    fun isEnabledTaintAnalysis() = isMIO() && baseTaintAnalysisProbability > 0
+
+    fun isEnabledSmartSampling() = isMIO() && probOfSmartSampling > 0
+
+    fun isEnabledWeightBasedMutation() = isMIO() && weightBasedMutationRate
+
+    fun isEnabledInitializationStructureMutation() = isMIO() && initStructureMutationProbability > 0 && maxSizeOfMutatingInitAction > 0
+
+    fun isEnabledResourceSizeHandling() = isMIO() && probOfHandlingLength> 0 && maxSizeOfHandlingResource > 0
 }

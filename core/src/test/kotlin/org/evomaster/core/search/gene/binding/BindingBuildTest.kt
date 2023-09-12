@@ -13,6 +13,12 @@ import org.evomaster.core.problem.rest.param.PathParam
 import org.evomaster.core.problem.rest.param.QueryParam
 import org.evomaster.core.problem.util.BindingBuilder
 import org.evomaster.core.search.gene.*
+import org.evomaster.core.search.gene.collection.EnumGene
+import org.evomaster.core.search.gene.numeric.DoubleGene
+import org.evomaster.core.search.gene.numeric.FloatGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
+import org.evomaster.core.search.gene.numeric.LongGene
+import org.evomaster.core.search.gene.optional.CustomMutationRateGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -30,19 +36,19 @@ class BindingBuildTest {
         val post = RestCallAction(id="post",verb = HttpVerb.POST,path = ancestorPath.copy(), parameters = mutableListOf(bodyParam))
 
         val path = RestPath("/api/foo/{id}")
-        val disruptiveGene = DisruptiveGene("id", f1.copy(), 1.0)
+        val disruptiveGene = CustomMutationRateGene("id", f1.copy(), 1.0)
         (disruptiveGene.gene as LongGene).value = 5L
         val pathParam = PathParam("id", disruptiveGene)
         val queryPathParam = QueryParam("doubleValue", f2.copy())
         (queryPathParam.gene as DoubleGene).value = 6.0
         val get = RestCallAction("get", HttpVerb.GET, path = path.copy(), parameters = mutableListOf(pathParam.copy(), queryPathParam.copy()))
 
-        val map = BindingBuilder.buildBindBetweenParams(bodyParam, post.path, get.path, get.parameters)
+        val map = BindingBuilder.buildBindBetweenParams(bodyParam, post.path, get.path, get.parameters, randomness = null)
         assertEquals(2, map.size)
         assert(map.map { "${it.first.name}${it.second.name}" }.contains("${f1.name}${f1.name}"))
         assert(map.map { "${it.first.name}${it.second.name}" }.contains("${f2.name}${f2.name}"))
 
-        post.bindBasedOn(get.path, get.parameters)
+        post.bindBasedOn(get.path, get.parameters, randomness = null)
         val idfield = ((post.parameters.first() as? BodyParam)?.gene as? ObjectGene)?.fields?.find { it.name == f1.name }
         assertNotNull(idfield)
         assertEquals(5L, (idfield as LongGene).value)

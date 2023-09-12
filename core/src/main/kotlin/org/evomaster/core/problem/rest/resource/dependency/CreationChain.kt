@@ -38,10 +38,30 @@ class PostCreationChain(val actions: MutableList<RestCallAction>, private var fa
 
     fun createPostChain(randomness: Randomness) : List<RestCallAction>{
         return actions.map {
-            val a = (it.copyContent() as RestCallAction)
+            val a = (it.copy() as RestCallAction)
             a.randomize(randomness, false)
             a
         }
+    }
+
+    /**
+     * add post actions into post resource creation chain at [index]
+     */
+    fun addActions(index : Int, actionsToAdd: List<RestCallAction>){
+        val added = actionsToAdd.filter { actions.none { e-> e.path.toString() == it.path.toString() } }
+        actions.addAll(index, added)
+    }
+
+    /**
+     * @return whether the post resource creation chain already has the [action]
+     */
+    fun hasAction(action : RestCallAction) : Boolean = actions.any { it.path.toString() == action.path.toString() }
+
+    /**
+     * prioritize the sequence of the post actions to prepare the resource
+     */
+    fun prioritizePostChain(){
+        actions.sortBy { it.path.levels() }
     }
 }
 

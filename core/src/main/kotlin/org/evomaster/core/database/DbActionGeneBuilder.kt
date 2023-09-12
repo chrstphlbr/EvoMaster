@@ -8,19 +8,25 @@ import org.evomaster.core.database.schema.Table
 import org.evomaster.core.parser.RegexHandler.createGeneForPostgresLike
 import org.evomaster.core.parser.RegexHandler.createGeneForPostgresSimilarTo
 import org.evomaster.core.search.gene.*
+import org.evomaster.core.search.gene.collection.EnumGene
 import org.evomaster.core.search.gene.datetime.DateGene
 import org.evomaster.core.search.gene.datetime.DateTimeGene
 import org.evomaster.core.search.gene.sql.time.SqlTimeIntervalGene
 import org.evomaster.core.search.gene.datetime.TimeGene
 import org.evomaster.core.search.gene.sql.geometric.*
-import org.evomaster.core.search.gene.sql.network.SqlCidrGene
-import org.evomaster.core.search.gene.sql.network.SqlInetGene
-import org.evomaster.core.search.gene.sql.network.SqlMacAddrGene
+import org.evomaster.core.search.gene.network.CidrGene
+import org.evomaster.core.search.gene.network.InetGene
+import org.evomaster.core.search.gene.network.MacAddrGene
+import org.evomaster.core.search.gene.numeric.*
+import org.evomaster.core.search.gene.optional.ChoiceGene
+import org.evomaster.core.search.gene.optional.NullableGene
 import org.evomaster.core.search.gene.regex.DisjunctionListRxGene
 import org.evomaster.core.search.gene.regex.RegexGene
+import org.evomaster.core.search.gene.regex.RegexGene.Companion.DATABASE_REGEX_SEPARATOR
 import org.evomaster.core.search.gene.sql.*
 import org.evomaster.core.search.gene.sql.textsearch.SqlTextSearchQueryGene
 import org.evomaster.core.search.gene.sql.textsearch.SqlTextSearchVectorGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.evomaster.core.utils.NumberCalculationUtil
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -79,7 +85,9 @@ class DbActionGeneBuilder {
                  * A StringGene of length 1 is used to represent the data.
                  *
                  */
-                ColumnDataType.CHAR ->
+                ColumnDataType.CHAR,
+                ColumnDataType.CHARACTER,
+                ColumnDataType.CHARACTER_LARGE_OBJECT ->
                     handleCharColumn(column)
 
                 /**
@@ -101,7 +109,8 @@ class DbActionGeneBuilder {
                  *
                  */
 
-                ColumnDataType.DOUBLE ->
+                ColumnDataType.DOUBLE,
+                ColumnDataType.DOUBLE_PRECISION ->
                     handleDoubleColumn(column)
 
                 /**
@@ -112,6 +121,8 @@ class DbActionGeneBuilder {
                 ColumnDataType.TEXT,
                 ColumnDataType.LONGTEXT,
                 ColumnDataType.VARCHAR,
+                ColumnDataType.CHARACTER_VARYING,
+                ColumnDataType.VARCHAR_IGNORECASE,
                 ColumnDataType.CLOB,
                 ColumnDataType.MEDIUMTEXT,
                 ColumnDataType.LONGBLOB,
@@ -120,16 +131,20 @@ class DbActionGeneBuilder {
                     handleTextColumn(column)
 
                 //TODO normal TIME, and add tests for it. this is just a quick workaround for patio-api
-                ColumnDataType.TIME,
-                ColumnDataType.TIMETZ ->
+                ColumnDataType.TIME ->
                     buildSqlTimeGene(column)
+
+                ColumnDataType.TIMETZ,
+                ColumnDataType.TIME_WITH_TIME_ZONE ->
+                    buildSqlTimeWithTimeZoneGene(column)
 
 
                 /**
                  * TIMESTAMP is assumed to be a Date field
                  */
                 ColumnDataType.TIMESTAMP,
-                ColumnDataType.TIMESTAMPTZ ->
+                ColumnDataType.TIMESTAMPTZ,
+                ColumnDataType.TIMESTAMP_WITH_TIME_ZONE ->
                     handleTimestampColumn(column)
 
                 /**
@@ -154,13 +169,16 @@ class DbActionGeneBuilder {
                  * Could be any kind of binary data... so let's just use a string,
                  * which also simplifies when needing generate the test files
                  */
-                ColumnDataType.BLOB ->
+                ColumnDataType.BLOB,
+                ColumnDataType.BINARY_LARGE_OBJECT ->
                     handleBLOBColumn(column)
 
                 ColumnDataType.BINARY ->
                     handleMySqlBinaryColumn(column)
 
-                ColumnDataType.VARBINARY ->
+                ColumnDataType.BINARY_VARYING,
+                ColumnDataType.VARBINARY,
+                ColumnDataType.JAVA_OBJECT ->
                     handleMySqlVarBinaryColumn(column)
 
 
@@ -185,7 +203,7 @@ class DbActionGeneBuilder {
                  * Postgres UUID column type
                  */
                 ColumnDataType.UUID ->
-                    SqlUUIDGene(column.name)
+                    UUIDGene(column.name)
 
                 /**
                  * Postgres JSONB column type
@@ -215,7 +233,7 @@ class DbActionGeneBuilder {
                  * MySQL and PostgreSQL Point column data type
                  */
                 ColumnDataType.POINT ->
-                    SqlPointGene(column.name, databaseType=column.databaseType)
+                    buildSqlPointGene(column)
 
                 /*
                  * PostgreSQL LINE Column data type
@@ -236,18 +254,53 @@ class DbActionGeneBuilder {
                     SqlBoxGene(column.name)
 
                 /*
-                 * MySQL LINESTRING and PostgreSQL PATH
+                 * MySQL,H2 LINESTRING and PostgreSQL PATH
                  * column data types
                  */
                 ColumnDataType.LINESTRING,
                 ColumnDataType.PATH ->
-                    SqlPathGene(column.name, databaseType = column.databaseType)
+                    buildSqlPathGene(column)
+
+                /**
+                 * MySQL and H2 MULTIPOINT
+                 * column types
+                 */
+                ColumnDataType.MULTIPOINT ->
+                    buildSqlMultiPointGene(column)
+
+                /**
+                 * PostgreSQL and H2 MULTILINESTRING
+                 * column types
+                 */
+                ColumnDataType.MULTILINESTRING ->
+                    buildSqlMultiPathGene(column)
 
                 /* MySQL and PostgreSQL POLYGON
                  * column data type
                  */
                 ColumnDataType.POLYGON ->
                     buildSqlPolygonGene(column)
+
+                /* MySQL and H2 MULTIPOLYGON
+                 * column data type
+                   */
+                ColumnDataType.MULTIPOLYGON ->
+                    buildSqlMultiPolygonGene(column)
+
+                /**
+                 * H2 GEOMETRY column data type
+                 */
+                ColumnDataType.GEOMETRY ->
+                    handleSqlGeometry(column)
+
+                /**
+                 * H2 GEOMETRYCOLLECTION and MYSQL GEOMCOLLECTION
+                 * column data types
+                 */
+                ColumnDataType.GEOMCOLLECTION,
+                ColumnDataType.GEOMETRYCOLLECTION ->
+                    handleSqlGeometryCollection(column)
+
 
                 /*
                  * PostgreSQL CIRCLE column data type
@@ -256,16 +309,16 @@ class DbActionGeneBuilder {
                     SqlCircleGene(column.name)
 
                 ColumnDataType.CIDR ->
-                    SqlCidrGene(column.name)
+                    CidrGene(column.name)
 
                 ColumnDataType.INET ->
-                    SqlInetGene(column.name)
+                    InetGene(column.name)
 
                 ColumnDataType.MACADDR ->
-                    SqlMacAddrGene(column.name)
+                    MacAddrGene(column.name)
 
                 ColumnDataType.MACADDR8 ->
-                    SqlMacAddrGene(column.name, numberOfOctets = SqlMacAddrGene.MACADDR8_SIZE)
+                    MacAddrGene(column.name, numberOfOctets = MacAddrGene.MACADDR8_SIZE)
 
                 ColumnDataType.TSVECTOR ->
                     SqlTextSearchVectorGene(column.name)
@@ -307,7 +360,7 @@ class DbActionGeneBuilder {
                     SqlMultiRangeGene(column.name, template = buildSqlTimestampRangeGene(column))
 
                 ColumnDataType.PG_LSN ->
-                    SqlLogSeqNumber(column.name)
+                    SqlLogSeqNumberGene(column.name)
 
                 ColumnDataType.COMPOSITE_TYPE ->
                     handleCompositeColumn(id, table, column)
@@ -338,16 +391,47 @@ class DbActionGeneBuilder {
 
         if (column.nullable && fk == null) {
             //FKs handle nullability in their own custom way
-            gene = SqlNullable(column.name, gene)
+            gene = NullableGene(column.name, gene, true, "NULL")
         }
 
         if (column.dimension > 0) {
-            // if the column type is an array, matrix, etc.
-            gene = SqlMultidimensionalArrayGene<Gene>(column.name, template = gene, numberOfDimensions = column.dimension)
+            gene = SqlMultidimensionalArrayGene(column.name,
+                    databaseType = column.databaseType,
+                    template = gene,
+                    numberOfDimensions = column.dimension)
         }
-
         return gene
     }
+
+    private fun handleSqlGeometry(column: Column): ChoiceGene<*> {
+        return ChoiceGene(name = column.name,
+                listOf(buildSqlPointGene(column),
+                        buildSqlMultiPointGene(column),
+                        buildSqlPathGene(column),
+                        buildSqlMultiPathGene(column),
+                        buildSqlPolygonGene(column),
+                        buildSqlMultiPolygonGene(column)))
+    }
+
+    private fun buildSqlPointGene(column: Column) =
+            SqlPointGene(column.name, databaseType = column.databaseType)
+
+    private fun buildSqlPathGene(column: Column) =
+            SqlPathGene(column.name, databaseType = column.databaseType)
+
+    private fun buildSqlMultiPointGene(column: Column) =
+            SqlMultiPointGene(column.name, databaseType = column.databaseType)
+
+    private fun buildSqlMultiPathGene(column: Column) =
+            SqlMultiPathGene(column.name, databaseType = column.databaseType)
+
+    private fun buildSqlMultiPolygonGene(column: Column) =
+            SqlMultiPolygonGene(column.name, databaseType = column.databaseType)
+
+    private fun handleSqlGeometryCollection(column: Column) =
+            SqlGeometryCollectionGene(column.name,
+                    databaseType = column.databaseType,
+                    template = handleSqlGeometry(column))
 
     private fun buildSqlPolygonGene(column: Column): SqlPolygonGene {
         return when (column.databaseType) {
@@ -356,14 +440,18 @@ class DbActionGeneBuilder {
              * method is ensured after each mutation of the
              * children of the SqlPolygonGene.
              */
-//            DatabaseType.MYSQL -> {
-//                SqlPolygonGene(column.name, minLengthOfPolygonRing=3, onlyNonIntersectingPolygons = true, databaseType = column.databaseType)
-//            }
-            DatabaseType.POSTGRES -> {
-                return SqlPolygonGene(column.name, minLengthOfPolygonRing=2, onlyNonIntersectingPolygons = false, databaseType = column.databaseType)
-
+            DatabaseType.MYSQL -> {
+                SqlPolygonGene(column.name, minLengthOfPolygonRing = 3, onlyNonIntersectingPolygons = true, databaseType = column.databaseType)
             }
-            else -> {throw IllegalArgumentException("Must define minLengthOfPolygonRing for database ${column.databaseType}")}
+            DatabaseType.H2 -> {
+                SqlPolygonGene(column.name, minLengthOfPolygonRing = 3, onlyNonIntersectingPolygons = false, databaseType = column.databaseType)
+            }
+            DatabaseType.POSTGRES -> {
+                SqlPolygonGene(column.name, minLengthOfPolygonRing = 2, onlyNonIntersectingPolygons = false, databaseType = column.databaseType)
+            }
+            else -> {
+                throw IllegalArgumentException("Must define minLengthOfPolygonRing for database ${column.databaseType}")
+            }
         }
     }
 
@@ -456,7 +544,19 @@ class DbActionGeneBuilder {
             checkNotEmpty(column.enumValuesAsStrings)
             EnumGene(name = column.name, data = column.enumValuesAsStrings)
         } else {
-            StringGene(name = column.name, value = "f", minLength = 0, maxLength = 1)
+            val minLength: Int
+            val maxLength: Int
+            when (column.databaseType) {
+                DatabaseType.H2 -> {
+                    minLength = column.size
+                    maxLength = column.size
+                }
+                else -> {
+                    minLength = 0
+                    maxLength = 1
+                }
+            }
+            StringGene(name = column.name, value = "f", minLength = minLength, maxLength = maxLength)
         }
     }
 
@@ -601,7 +701,7 @@ class DbActionGeneBuilder {
                 .map { it.disjunctions }
                 .map { it.disjunctions }
                 .flatten()
-        return RegexGene(geneName, disjunctions = DisjunctionListRxGene(disjunctions = disjunctionRxGenes))
+        return RegexGene(geneName, disjunctions = DisjunctionListRxGene(disjunctions = disjunctionRxGenes), "${RegexGene.DATABASE_REGEX_PREFIX}${likePatterns.joinToString(DATABASE_REGEX_SEPARATOR)}")
     }
 
 
@@ -632,22 +732,27 @@ class DbActionGeneBuilder {
                 .map { it.disjunctions }
                 .map { it.disjunctions }
                 .flatten()
-        return RegexGene(geneName, disjunctions = DisjunctionListRxGene(disjunctions = disjunctionRxGenes))
+        return RegexGene(geneName, disjunctions = DisjunctionListRxGene(disjunctions = disjunctionRxGenes), "${RegexGene.DATABASE_REGEX_PREFIX}${similarToPatterns.joinToString(DATABASE_REGEX_SEPARATOR)}")
     }
 
-    private fun buildSqlTimeGene(column: Column): TimeGene {
-        val timeGeneFormat = when (column.databaseType) {
-            DatabaseType.MYSQL -> TimeGene.TimeGeneFormat.ISO_LOCAL_DATE_FORMAT
-            DatabaseType.POSTGRES -> TimeGene.TimeGeneFormat.TIME_WITH_MILLISECONDS
-            else -> TimeGene.TimeGeneFormat.TIME_WITH_MILLISECONDS
-        }
-
+    private fun buildSqlTimeWithTimeZoneGene(column: Column): TimeGene {
         return TimeGene(
                 column.name,
                 hour = IntegerGene("hour", 0, 0, 23),
                 minute = IntegerGene("minute", 0, 0, 59),
                 second = IntegerGene("second", 0, 0, 59),
-                timeGeneFormat = timeGeneFormat
+                timeGeneFormat = TimeGene.TimeGeneFormat.TIME_WITH_MILLISECONDS
+        )
+    }
+
+
+    private fun buildSqlTimeGene(column: Column): TimeGene {
+        return TimeGene(
+                column.name,
+                hour = IntegerGene("hour", 0, 0, 23),
+                minute = IntegerGene("minute", 0, 0, 59),
+                second = IntegerGene("second", 0, 0, 59),
+                timeGeneFormat = TimeGene.TimeGeneFormat.ISO_LOCAL_DATE_FORMAT
         )
     }
 
@@ -668,7 +773,7 @@ class DbActionGeneBuilder {
                 name = name,
                 date = DateGene(
                         "date",
-                        year = IntegerGene("year", 2016,  minYear, maxYear),
+                        year = IntegerGene("year", 2016, minYear, maxYear),
                         month = IntegerGene("month", 3, 1, 12),
                         day = IntegerGene("day", 12, 1, 31),
                         onlyValidDates = true
@@ -733,6 +838,7 @@ class DbActionGeneBuilder {
             checkNotEmpty(column.enumValuesAsStrings)
             EnumGene(name = column.name, data = column.enumValuesAsStrings.map { it.toFloat() })
         } else {
+
             if (column.scale != null && column.scale >= 0) {
                 /*
                     set precision and boundary for DECIMAL
@@ -828,7 +934,7 @@ class DbActionGeneBuilder {
     }
 
     /**
-     * handle bitvarying for postgres
+     * handle bit varying for postgres
      * https://www.postgresql.org/docs/14/datatype-bit.html
      */
     private fun handleBitVaryingColumn(column: Column): Gene {

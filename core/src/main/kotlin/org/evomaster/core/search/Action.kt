@@ -9,21 +9,35 @@ import org.slf4j.LoggerFactory
  * A variable-length individual will be composed by 1 or more "actions".
  * Actions can be: REST call, setup Wiremock, setup database, etc.
  */
-abstract class Action(children: List<out StructuralElement>) : StructuralElement(children){
+abstract class Action(children: List<StructuralElement>) : ActionComponent(
+    children.toMutableList(),
+    {k -> !ActionComponent::class.java.isAssignableFrom(k)
+            && !Individual::class.java.isAssignableFrom(k)} //action should not have other actions nor individuals
+) {
 
-    companion object{
+    companion object {
         private val log: Logger = LoggerFactory.getLogger(Action::class.java)
     }
 
-    abstract fun getName() : String
+    override fun flatten(): List<Action> {
+        return listOf(this)
+    }
+
+    abstract fun getName(): String
 
     /**
-     * Return a view of the genes in the action.
+     * Return a view of the top genes in the action.
      * Those are the actual instances, and not copies.
+     *
+     * A top gene is at the root of a gene tree.
+     * Note that top gene might not be mounted directly under an Action, as there can
+     * be other structural elements in between, like Param for REST.
+     * However, these intermediate structures should only impact the phenotype, and not
+     * the genotype
      */
-    abstract fun seeGenes() : List<out Gene>
+    abstract fun seeTopGenes(): List<out Gene>
 
-    final override fun copy() : Action{
+    final override fun copy(): Action {
         val copy = super.copy()
         if (copy !is Action)
             throw IllegalStateException("mismatched type: the type should be Action, but it is ${this::class.java.simpleName}")
@@ -38,21 +52,45 @@ abstract class Action(children: List<out StructuralElement>) : StructuralElement
      */
     abstract fun shouldCountForFitnessEvaluations(): Boolean
 
-    abstract fun randomize(
-        randomness: Randomness,
-        forceNewValue: Boolean,
-        all: List<Action> = listOf())
+    open fun postRandomizedChecks(randomness: Randomness?) {}
 
+    /**
+     * Randomize all genes in this action.
+     */
+    fun randomize(randomness: Randomness, forceNewValue: Boolean) {
+        seeTopGenes()
+                .filter { it.isMutable() }
+                .forEach {
+                    it.randomize(randomness, forceNewValue)
+                }
+        postRandomizedChecks(randomness)
+    }
+
+    /**
+     * Initialize all the genes in this action
+     */
+    open fun doInitialize(randomness: Randomness? = null) {
+        seeTopGenes().forEach { it.doInitialize(randomness) }
+        postRandomizedChecks(randomness)
+    }
+
+    fun isInitialized(): Boolean {
+        return seeTopGenes().all { it.initialized }
+    }
 
     /**
      * removing all binding which refers to [this] gene
      */
-    fun removeThisFromItsBindingGenes(){
-        seeGenes().forEach { g->
-            g.flatView().forEach { r->
+    fun removeThisFromItsBindingGenes() {
+        seeTopGenes().forEach { g ->
+            g.flatView().forEach { r ->
                 r.removeThisFromItsBindingGenes()
             }
         }
+    }
+
+    override fun flatView(): List<ActionComponent> {
+        return listOf(this)
     }
 
 }

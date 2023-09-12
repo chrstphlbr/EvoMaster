@@ -4,30 +4,35 @@ import com.google.inject.Inject
 import org.evomaster.core.EMConfig
 import org.evomaster.core.output.Lines
 import org.evomaster.core.output.SqlWriter
-import org.evomaster.core.problem.httpws.service.HttpWsAction
-import org.evomaster.core.problem.httpws.service.HttpWsCallResult
+import org.evomaster.core.problem.httpws.HttpWsAction
+import org.evomaster.core.problem.httpws.HttpWsCallResult
 import org.evomaster.core.problem.rest.RestCallAction
 import org.evomaster.core.problem.rest.RestCallResult
 import org.evomaster.core.problem.rest.RestIndividual
-import org.evomaster.core.search.*
-import org.evomaster.core.search.gene.GeneUtils
+import org.evomaster.core.search.Action
+import org.evomaster.core.search.ActionResult
+import org.evomaster.core.search.EvaluatedIndividual
+import org.evomaster.core.search.Individual
+import org.evomaster.core.search.gene.utils.GeneUtils
 import org.slf4j.LoggerFactory
+import java.nio.file.Path
+import java.util.*
 
 class RestTestCaseWriter : HttpWsTestCaseWriter {
 
-    companion object{
+    companion object {
         private val log = LoggerFactory.getLogger(RestTestCaseWriter::class.java)
     }
 
     @Inject
-    private lateinit var partialOracles : PartialOracles
+    private lateinit var partialOracles: PartialOracles
 
     constructor() : super()
 
     /**
      * ONLY for tests
      */
-    constructor(config: EMConfig, partialOracles: PartialOracles) : super(){
+    constructor(config: EMConfig, partialOracles: PartialOracles) : super() {
         this.config = config
         this.partialOracles = partialOracles
     }
@@ -44,7 +49,12 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
                 || ((call as RestCallAction).saveLocation && !res.stopping)
     }
 
-    override fun handleFieldDeclarations(lines: Lines, baseUrlOfSut: String, ind: EvaluatedIndividual<*>, insertionVars: MutableList<Pair<String, String>>) {
+    override fun handleFieldDeclarations(
+        lines: Lines,
+        baseUrlOfSut: String,
+        ind: EvaluatedIndividual<*>,
+        insertionVars: MutableList<Pair<String, String>>
+    ) {
         super.handleFieldDeclarations(lines, baseUrlOfSut, ind, insertionVars)
 
         if (shouldCheckExpectations()) {
@@ -63,36 +73,52 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
              */
             lines.addEmpty()
 
-            ind.evaluatedActions().asSequence()
-                    .map { it.action }
-                    .filterIsInstance(RestCallAction::class.java)
-                    .filter { it.locationId != null }
-                    .map { it.locationId }
-                    .distinct()
-                    .forEach { id ->
-                        val name = locationVar(id!!)
-                        when {
-                            format.isJava() -> lines.add("String $name = \"\";")
-                            format.isKotlin() -> lines.add("var $name : String? = \"\"")
-                            format.isJavaScript() -> lines.add("let $name = \"\";")
-                            format.isCsharp() -> lines.add("var $name = \"\";")
-                                // should never happen
-                            else -> throw IllegalStateException("Unsupported format $format")
-                        }
+            ind.evaluatedMainActions().asSequence()
+                .map { it.action }
+                .filterIsInstance(RestCallAction::class.java)
+                .filter { it.locationId != null }
+                .map { it.locationId }
+                .distinct()
+                .forEach { id ->
+                    val name = locationVar(id!!)
+                    when {
+                        format.isJava() -> lines.add("String $name = \"\";")
+                        format.isKotlin() -> lines.add("var $name : String? = \"\"")
+                        format.isJavaScript() -> lines.add("let $name = \"\";")
+                        format.isCsharp() -> lines.add("var $name = \"\";")
+                        // should never happen
+                        else -> throw IllegalStateException("Unsupported format $format")
                     }
+                }
         }
     }
 
-    override fun handleActionCalls(lines: Lines, baseUrlOfSut: String, ind: EvaluatedIndividual<*>, insertionVars: MutableList<Pair<String, String>>){
+    override fun handleActionCalls(
+            lines: Lines,
+            baseUrlOfSut: String,
+            ind: EvaluatedIndividual<*>,
+            insertionVars: MutableList<Pair<String, String>>,
+            testCaseName: String,
+            testSuitePath: Path?
+    ) {
         //SQL actions are generated in between
         if (ind.individual is RestIndividual) {
             ind.evaluatedResourceActions().forEachIndexed { index, c ->
                 // db
                 if (c.first.isNotEmpty())
-                    SqlWriter.handleDbInitialization(format, c.first, lines, ind.individual.seeDbActions(), groupIndex = index.toString(), insertionVars =insertionVars, skipFailure = config.skipFailureSQLInTestFile)
+                    SqlWriter.handleDbInitialization(
+                        format,
+                        c.first,
+                        lines,
+                        ind.individual.seeDbActions(),
+                        groupIndex = index.toString(),
+                        insertionVars = insertionVars,
+                        skipFailure = config.skipFailureSQLInTestFile
+                    )
                 //actions
                 c.second.forEach { a ->
-                    handleSingleCall(a, lines, baseUrlOfSut)
+                    val exeuctionIndex = ind.individual.seeMainExecutableActions().indexOf(a.action)
+                    handleSingleCall(a, exeuctionIndex, ind.fitness, lines, testCaseName, testSuitePath, baseUrlOfSut)
                 }
             }
         }
@@ -109,21 +135,23 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
      * Check if any action requires a chain based on location headers:
      * eg a POST followed by a GET on the created resource
      */
-    private fun hasChainedLocations(individual: Individual) : Boolean{
-        return individual.seeActions().any { a ->
+    private fun hasChainedLocations(individual: Individual): Boolean {
+        return individual.seeAllActions().any { a ->
             a is RestCallAction && a.isLocationChained()
         }
     }
 
 
-    override fun addActionLines(action: Action, lines: Lines, result: ActionResult, baseUrlOfSut: String){
+    override fun addActionLines(action: Action, index: Int, testCaseName: String, lines: Lines, result: ActionResult, testSuitePath: Path?, baseUrlOfSut: String) {
         addRestCallLines(action as RestCallAction, lines, result as RestCallResult, baseUrlOfSut)
     }
 
-    private fun addRestCallLines(call: RestCallAction,
-                                 lines: Lines,
-                                 res: RestCallResult,
-                                 baseUrlOfSut: String) {
+    private fun addRestCallLines(
+        call: RestCallAction,
+        lines: Lines,
+        res: RestCallResult,
+        baseUrlOfSut: String
+    ) {
 
         val responseVariableName = makeHttpCall(call, lines, res, baseUrlOfSut)
 
@@ -136,22 +164,26 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
     }
 
 
-
     private fun shouldCheckExpectations() =
     //for now Expectations are only supported on the JVM
-            //TODO C# (and maybe JS as well???)
-            config.expectationsActive && config.outputFormat.isJavaOrKotlin()
+        //TODO C# (and maybe JS as well???)
+        config.expectationsActive && config.outputFormat.isJavaOrKotlin()
 
 
     override fun handleVerbEndpoint(baseUrlOfSut: String, _call: HttpWsAction, lines: Lines) {
 
         val call = _call as RestCallAction
-        val verb = call.verb.name.toLowerCase()
+        val verb = call.verb.name.lowercase(Locale.getDefault())
 
         if (format.isCsharp()) {
             lines.append(".${capitalizeFirstChar(verb)}Async(")
         } else {
-            lines.add(".$verb(")
+            if (verb == "trace" && format.isJavaOrKotlin()) {
+                //currently, RestAssured does not have a trace() method
+                lines.add(".request(io.restassured.http.Method.TRACE, ")
+            } else {
+                lines.add(".$verb(")
+            }
         }
 
         if (call.locationId != null) {
@@ -159,11 +191,10 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
                 lines.append("${TestSuiteWriter.jsImport}.")
             }
 
-            if(format.isCsharp()){
+            if (format.isCsharp()) {
                 //TODO: double check this
                 lines.append("${locationVar(call.locationId!!)} + $baseUrlOfSut + \"${call.resolvedPath()}\"")
-            }
-            else{
+            } else {
                 lines.append("resolveLocation(${locationVar(call.locationId!!)}, $baseUrlOfSut + \"${call.resolvedPath()}\")")
             }
 
@@ -187,9 +218,25 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
 
                 lines.indented {
                     (0 until elements.lastIndex).forEach { i ->
-                        lines.add("\"${GeneUtils.applyEscapes(elements[i], mode = GeneUtils.EscapeMode.SQL, format = format)}&\" + ")
+                        lines.add(
+                            "\"${
+                                GeneUtils.applyEscapes(
+                                    elements[i],
+                                    mode = GeneUtils.EscapeMode.SQL,
+                                    format = format
+                                )
+                            }&\" + "
+                        )
                     }
-                    lines.add("\"${GeneUtils.applyEscapes(elements.last(), mode = GeneUtils.EscapeMode.SQL, format = format)}\"")
+                    lines.add(
+                        "\"${
+                            GeneUtils.applyEscapes(
+                                elements.last(),
+                                mode = GeneUtils.EscapeMode.SQL,
+                                format = format
+                            )
+                        }\""
+                    )
                 }
             }
         }
@@ -242,8 +289,6 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
     }
 
 
-
-
     private fun handleLocationHeader(call: RestCallAction, res: RestCallResult, resVarName: String, lines: Lines) {
         if (call.saveLocation && !res.stopping) {
 
@@ -284,41 +329,44 @@ class RestTestCaseWriter : HttpWsTestCaseWriter {
                     else -> ""
                 }
                 val baseUri: String = if (call.locationId != null) {
+                    /* A variable should NOT be enclosed by quotes */
                     locationVar(call.locationId!!)
                 } else {
-                    call.path.resolveOnlyPath(call.parameters)
+                    /* Literals should be enclosed by quotes */
+                    "\"${call.path.resolveOnlyPath(call.parameters)}\""
                 }
 
                 //TODO JS and C#
-                val extract = "$resVarName.extract().body().path$extraTypeInfo(\"${res.getResourceIdName()}\").toString()"
+                val extract =
+                    "$resVarName.extract().body().path$extraTypeInfo(\"${res.getResourceIdName()}\").toString()"
 
-                lines.add("${locationVar(call.path.lastElement())} = \"$baseUri/\" + $extract")
+                lines.add("${locationVar(call.path.lastElement())} = $baseUri + \"/\" + $extract")
                 lines.appendSemicolon(format)
             }
         }
     }
 
-    private fun addDeclarationsForExpectations(lines: Lines, individual: EvaluatedIndividual<RestIndividual>){
-        if(!partialOracles.generatesExpectation(individual)){
+    private fun addDeclarationsForExpectations(lines: Lines, individual: EvaluatedIndividual<RestIndividual>) {
+        if (!partialOracles.generatesExpectation(individual)) {
             return
         }
 
-        if(! format.isJavaOrKotlin()){
+        if (!format.isJavaOrKotlin()) {
             //TODO will need to see if going to support JS and C# as well
             return
         }
 
         lines.addEmpty()
-        when{
+        when {
             format.isJava() -> lines.append("ExpectationHandler expectationHandler = expectationHandler()")
             format.isKotlin() -> lines.append("val expectationHandler: ExpectationHandler = expectationHandler()")
         }
         lines.appendSemicolon(format)
     }
 
-    private fun handleExpectationSpecificLines(call: RestCallAction, lines: Lines, res: RestCallResult, name: String){
+    private fun handleExpectationSpecificLines(call: RestCallAction, lines: Lines, res: RestCallResult, name: String) {
         lines.addEmpty()
-        if( partialOracles.generatesExpectation(call, res)){
+        if (partialOracles.generatesExpectation(call, res)) {
             partialOracles.addExpectations(call, lines, res, name, format)
         }
     }

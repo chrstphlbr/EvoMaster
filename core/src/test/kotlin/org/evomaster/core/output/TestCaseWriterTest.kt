@@ -2,6 +2,7 @@ package org.evomaster.core.output
 
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
 import org.evomaster.core.EMConfig
+import org.evomaster.core.TestUtils
 import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionGeneBuilder
 import org.evomaster.core.database.DbActionResult
@@ -20,7 +21,9 @@ import org.evomaster.core.search.gene.datetime.DateGene
 import org.evomaster.core.search.gene.sql.SqlAutoIncrementGene
 import org.evomaster.core.search.gene.sql.SqlForeignKeyGene
 import org.evomaster.core.search.gene.sql.SqlPrimaryKeyGene
-import org.evomaster.core.search.gene.sql.SqlUUIDGene
+import org.evomaster.core.search.gene.UUIDGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import javax.ws.rs.core.MediaType
@@ -67,7 +70,7 @@ class TestCaseWriterTest {
 
         val id = 0L
 
-        val gene = StringGene(aColumn.name, "stringValue", 0, 10)
+        val gene = StringGene(aColumn.name, "stringValue", 0, 12)
 
         val insertIntoTableAction = DbAction(aTable, setOf(aColumn), id, mutableListOf(gene))
 
@@ -113,14 +116,14 @@ class TestCaseWriterTest {
 
         val restActions = emptyList<RestCallAction>().toMutableList()
 
-
         val individual = RestIndividual(restActions, sampleType, dbInitialization)
+        TestUtils.doInitializeIndividualForTesting(individual)
 
         val fitnessVal = FitnessValue(0.0)
 
         val results = dbInitialization.map { DbActionResult().also { it.setInsertExecutionResult(true) } }
 
-        val ei = EvaluatedIndividual<RestIndividual>(fitnessVal, individual, results)
+        val ei = EvaluatedIndividual(fitnessVal, individual, results)
         return Triple(format, baseUrlOfSut, ei)
     }
 
@@ -131,11 +134,11 @@ class TestCaseWriterTest {
         val aTable = Table("myTable", setOf(aColumn), HashSet<ForeignKey>())
 
 
-        val gene0 = StringGene(aColumn.name, "stringValue0", 0, 10)
+        val gene0 = StringGene(aColumn.name, "stringValue0", 0, 16)
 
         val insertIntoTableAction0 = DbAction(aTable, setOf(aColumn), 0L, mutableListOf(gene0))
 
-        val gene1 = StringGene(aColumn.name, "stringValue1", 0, 10)
+        val gene1 = StringGene(aColumn.name, "stringValue1", 0, 16)
 
         val insertIntoTableAction1 = DbAction(aTable, setOf(aColumn), 1L, mutableListOf(gene1))
 
@@ -182,8 +185,8 @@ class TestCaseWriterTest {
 
         val id = 0L
 
-        val gene0 = StringGene(column0.name, "stringValue0", 0, 10)
-        val gene1 = StringGene(column1.name, "stringValue1", 0, 10)
+        val gene0 = StringGene(column0.name, "stringValue0", 0, 16)
+        val gene1 = StringGene(column1.name, "stringValue1", 0, 16)
 
         val insertIntoTableAction = DbAction(aTable, setOf(column0, column1), id, mutableListOf(gene0, gene1))
 
@@ -226,7 +229,7 @@ class TestCaseWriterTest {
 
         val id = 0L
 
-        val integerGene = IntegerGene(idColumn.name, 42, 0, 10)
+        val integerGene = IntegerGene(idColumn.name, 42, 0, 50)
         val stringGene = StringGene(nameColumn.name, "nameValue", 0, 10)
 
         val insertIntoTableAction = DbAction(aTable, setOf(idColumn, nameColumn), id, listOf(integerGene, stringGene))
@@ -271,7 +274,7 @@ class TestCaseWriterTest {
 
         val id = 0L
 
-        val integerGene = IntegerGene(idColumn.name, 42, 0, 10)
+        val integerGene = IntegerGene(idColumn.name, 42, 0, 100)
         val primaryKeyGene = SqlPrimaryKeyGene(idColumn.name, "myTable", integerGene, 10)
         val stringGene = StringGene(nameColumn.name, "nameValue", 0, 10)
 
@@ -318,7 +321,7 @@ class TestCaseWriterTest {
 
         val pkGeneUniqueId = 12345L
 
-        val integerGene = IntegerGene(idColumn.name, 42, 0, 10)
+        val integerGene = IntegerGene(idColumn.name, 42, 0, 100)
         val primaryKeyTable0Gene = SqlPrimaryKeyGene(idColumn.name, "Table0", integerGene, pkGeneUniqueId)
         val primaryKeyTable1Gene = SqlPrimaryKeyGene(idColumn.name, "Table1", integerGene, 10)
 
@@ -330,7 +333,7 @@ class TestCaseWriterTest {
 
         val insertIntoTable1 = DbAction(table1, setOf(idColumn, fkColumn), secondInsertionId, listOf(primaryKeyTable1Gene, foreignKeyGene))
 
-        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0, insertIntoTable1))
+        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0.copy() as DbAction, insertIntoTable1.copy() as DbAction))
         val config = getConfig(format)
 
         val test = TestCase(test = ei, name = "test")
@@ -417,7 +420,7 @@ class TestCaseWriterTest {
         val table1 = Table("Table1", setOf(idColumn, fkColumn), HashSet<ForeignKey>())
 
 
-        val integerGene = IntegerGene(idColumn.name, 42, 0, 10)
+        val integerGene = IntegerGene(idColumn.name, 42, 0, 100)
         val primaryKeyTable0Gene = SqlPrimaryKeyGene(idColumn.name, "Table0", integerGene, 10)
         val primaryKeyTable1Gene = SqlPrimaryKeyGene(idColumn.name, "Table1", integerGene, 10)
 
@@ -429,7 +432,7 @@ class TestCaseWriterTest {
 
         val insertIntoTable1 = DbAction(table1, setOf(idColumn, fkColumn), secondInsertionId, listOf(primaryKeyTable1Gene, foreignKeyGene))
 
-        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0, insertIntoTable1))
+        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0.copy() as DbAction, insertIntoTable1.copy() as DbAction))
         val config = getConfig(format)
 
         val test = TestCase(test = ei, name = "test")
@@ -516,15 +519,15 @@ class TestCaseWriterTest {
         val aTable = Table("myTable", setOf(aColumn), HashSet<ForeignKey>())
 
 
-        val gene0 = StringGene(aColumn.name, "stringValue0", 0, 10)
+        val gene0 = StringGene(aColumn.name, "stringValue0", 0, 16)
 
         val insertIntoTableAction0 = DbAction(aTable, setOf(aColumn), 0L, mutableListOf(gene0))
 
-        val gene1 = StringGene(aColumn.name, "stringValue1", 0, 10)
+        val gene1 = StringGene(aColumn.name, "stringValue1", 0, 16)
 
         val insertIntoTableAction1 = DbAction(aTable, setOf(aColumn), 1L, mutableListOf(gene1))
 
-        val gene2 = StringGene(aColumn.name, "stringValue2", 0, 10)
+        val gene2 = StringGene(aColumn.name, "stringValue2", 0, 16)
 
         val insertIntoTableAction2 = DbAction(aTable, setOf(aColumn), 2L, mutableListOf(gene2))
 
@@ -587,7 +590,7 @@ class TestCaseWriterTest {
 
         val insertIntoTable1 = DbAction(table1, setOf(idColumn, fkColumn), secondInsertionId, listOf(primaryKeyTable1Gene, foreignKeyGene))
 
-        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0, insertIntoTable1))
+        val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insertIntoTable0.copy() as DbAction, insertIntoTable1.copy() as DbAction))
         val config = getConfig(format)
 
         val test = TestCase(test = ei, name = "test")
@@ -734,7 +737,7 @@ class TestCaseWriterTest {
 
         val autoGene = SqlAutoIncrementGene(table.name)
         val pkGene0 = SqlPrimaryKeyGene(idColumn.name, "Table0", autoGene, 10)
-        val uuidGene = SqlUUIDGene(uuidColumn.name)
+        val uuidGene = UUIDGene(uuidColumn.name)
         val insert = DbAction(table, setOf(idColumn, uuidColumn), 0L, listOf(pkGene0, uuidGene))
 
         val (format, baseUrlOfSut, ei) = buildEvaluatedIndividual(mutableListOf(insert))
@@ -946,6 +949,8 @@ class TestCaseWriterTest {
         val action = RestCallAction("1", HttpVerb.GET, RestPath(""), mutableListOf())
         val restActions = listOf(action).toMutableList()
         val individual = RestIndividual(restActions, sampleType)
+        TestUtils.doInitializeIndividualForTesting(individual)
+
         val fitnessVal = FitnessValue(0.0)
         val result = RestCallResult()
         result.setTimedout(timedout = true)
@@ -1019,7 +1024,7 @@ class TestCaseWriterTest {
 
         val pkGeneUniqueId = 12345L
 
-        val integerGene = IntegerGene(fooId.name, 42, 0, 10)
+        val integerGene = IntegerGene(fooId.name, 42, 0, 100)
         val pkFoo = SqlPrimaryKeyGene(fooId.name, "Foo", integerGene, pkGeneUniqueId)
         val pkBar = SqlPrimaryKeyGene(fooId.name, "Bar", integerGene, 10)
         val fooInsertionId = 1001L
@@ -1034,8 +1039,8 @@ class TestCaseWriterTest {
         val (format, baseUrlOfSut, ei) = buildResourceEvaluatedIndividual(
             dbInitialization = mutableListOf(),
             groups = mutableListOf(
-                (mutableListOf(fooInsertion) to mutableListOf(fooAction)),
-                (mutableListOf(barInsertion) to mutableListOf(barAction))
+                (mutableListOf(fooInsertion.copy() as DbAction) to mutableListOf(fooAction.copy() as RestCallAction)),
+                (mutableListOf(barInsertion.copy() as DbAction) to mutableListOf(barAction.copy() as RestCallAction))
             )
         )
 
@@ -1091,7 +1096,7 @@ public void test() throws Exception {
 
         val pkGeneUniqueId = 12345L
 
-        val integerGene = IntegerGene(fooId.name, 42, 0, 10)
+        val integerGene = IntegerGene(fooId.name, 42, 0, 100)
         val pkFoo = SqlPrimaryKeyGene(fooId.name, "Foo", integerGene, pkGeneUniqueId)
         val pkBar = SqlPrimaryKeyGene(fooId.name, "Bar", integerGene, 10)
         val fooInsertionId = 1001L
@@ -1103,15 +1108,17 @@ public void test() throws Exception {
         val fooAction = RestCallAction("1", HttpVerb.GET, RestPath("/foo"), mutableListOf())
         val barAction = RestCallAction("2", HttpVerb.GET, RestPath("/bar"), mutableListOf())
 
-        val (format, baseUrlOfSut, ei) = buildResourceEvaluatedIndividual(
-            dbInitialization = mutableListOf(),
-            groups = mutableListOf(
-                (mutableListOf(fooInsertion) to mutableListOf(fooAction)),
-                (mutableListOf(barInsertion) to mutableListOf(barAction))
-            )
+        val groups =  mutableListOf(
+            (mutableListOf(fooInsertion.copy() as DbAction) to mutableListOf(fooAction.copy() as RestCallAction)),
+            (mutableListOf(barInsertion.copy() as DbAction) to mutableListOf(barAction.copy() as RestCallAction))
         )
 
-        val fooInsertionResult = ei.seeResults(listOf(fooInsertion))
+        val (format, baseUrlOfSut, ei) = buildResourceEvaluatedIndividual(
+            dbInitialization = mutableListOf(),
+            groups = groups
+        )
+
+        val fooInsertionResult = ei.seeResults(groups[0].first)
         assertEquals(1, fooInsertionResult.size)
         assertTrue(fooInsertionResult[0] is DbActionResult)
         (fooInsertionResult[0] as DbActionResult).setInsertExecutionResult(false)

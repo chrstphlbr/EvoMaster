@@ -3,8 +3,8 @@ package org.evomaster.core.database.extract.h2
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.sql.SqlNullable
-import org.evomaster.core.search.gene.StringGene
+import org.evomaster.core.search.gene.optional.NullableGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.Executable
@@ -82,9 +82,9 @@ class OcvnExtractTest : ExtractTestBaseH2() {
         val columnName = "BYTES"
         val actions = builder.createSqlInsertionAction(tableName, setOf(columnName))
 
-        val all = actions.flatMap { it.seeGenes() }.flatMap { it.flatView() }
+        val all = actions.flatMap { it.seeTopGenes() }.flatMap { it.flatView() }
         val gene = all.find { it.name.equals(columnName, true) }
 
-        assertTrue(gene is SqlNullable && gene.gene is StringGene)
+        assertTrue(gene is NullableGene && gene.gene is StringGene)
     }
 }

@@ -4,16 +4,23 @@ import com.google.inject.Inject
 import org.evomaster.client.java.controller.api.dto.AdditionalInfoDto
 import org.evomaster.client.java.controller.api.dto.problem.rpc.exception.RPCExceptionType
 import org.evomaster.core.Lazy
+import org.evomaster.core.database.DbAction
 import org.evomaster.core.problem.api.service.ApiWsFitness
+import org.evomaster.core.problem.externalservice.rpc.RPCExternalServiceAction
+import org.evomaster.core.problem.externalservice.rpc.parm.RPCResponseParam
+import org.evomaster.core.problem.externalservice.rpc.parm.UpdateForRPCResponseParam
 import org.evomaster.core.problem.rpc.RPCCallAction
 import org.evomaster.core.problem.rpc.RPCCallResult
 import org.evomaster.core.problem.rpc.RPCCallResultCategory
 import org.evomaster.core.problem.rpc.RPCIndividual
+import org.evomaster.core.problem.rpc.param.RPCParam
 import org.evomaster.core.problem.util.ParamUtil
+import org.evomaster.core.problem.util.ParserDtoUtil.wrapWithOptionalGene
 import org.evomaster.core.search.ActionResult
 import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.FitnessValue
-import org.evomaster.core.search.gene.CollectionGene
+import org.evomaster.core.search.gene.interfaces.CollectionGene
+import org.evomaster.core.search.gene.optional.OptionalGene
 import org.evomaster.core.taint.TaintAnalysis
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -38,12 +45,12 @@ class RPCFitness : ApiWsFitness<RPCIndividual>() {
         // TODO handle auth
         val actionResults: MutableList<ActionResult> = mutableListOf()
 
-        doDbCalls(individual.seeInitializingActions(), actionResults = actionResults)
+        doDbCalls(individual.seeInitializingActions().filterIsInstance<DbAction>(), actionResults = actionResults)
 
         val fv = FitnessValue(individual.size().toDouble())
 
         run loop@{
-            individual.seeActions().forEachIndexed { index, action->
+            individual.seeAllActions().filterIsInstance<RPCCallAction>().forEachIndexed { index, action->
                 val ok = executeNewAction(action, index, actionResults)
                 if (!ok) return@loop
             }
@@ -53,6 +60,7 @@ class RPCFitness : ApiWsFitness<RPCIndividual>() {
                 ?: return null
         handleExtra(dto, fv)
 
+        expandIndividual(individual)
         /*
             TODO Man handle targets regarding info in responses,
             eg, exception
@@ -61,15 +69,39 @@ class RPCFitness : ApiWsFitness<RPCIndividual>() {
                 status info in GRPC, see https://grpc.github.io/grpc/core/md_doc_statuscodes.html
          */
         val rpcActionResults = actionResults.filterIsInstance<RPCCallResult>()
-        handleResponseTargets(fv, individual.seeActions(), rpcActionResults, dto.additionalInfoList)
+        handleResponseTargets(fv, individual.seeAllActions().filterIsInstance<RPCCallAction>(), rpcActionResults, dto.additionalInfoList)
 
-        if (config.baseTaintAnalysisProbability > 0) {
+        if (config.isEnabledTaintAnalysis()) {
             Lazy.assert { rpcActionResults.size == dto.additionalInfoList.size }
-            TaintAnalysis.doTaintAnalysis(individual, dto.additionalInfoList, randomness)
+            TaintAnalysis.doTaintAnalysis(individual, dto.additionalInfoList, randomness, config.enableSchemaConstraintHandling)
         }
 
         return EvaluatedIndividual(fv, individual.copy() as RPCIndividual, actionResults, trackOperator = individual.trackOperator, index = time.evaluatedIndividuals, config = config)
 
+    }
+
+    private fun expandIndividual(
+        individual: RPCIndividual
+    ){
+        val exMissingDto = individual.seeExternalServiceActions()
+            .filterIsInstance<RPCExternalServiceAction>()
+            .filterNot {
+                ((it.response as? RPCResponseParam)?:throw IllegalStateException("response of RPCExternalServiceAction should be RPCResponseParam, but it is ${it.response::class.java.simpleName}")).fromClass
+            }
+
+        if (exMissingDto.isEmpty()) {
+            return
+        }
+        val missingDtoClass = exMissingDto.map { (it.response as RPCResponseParam).className }
+        rpcHandler.getJVMSchemaForDto(missingDtoClass.toSet()).forEach { expandResponse->
+            exMissingDto.filter { (it.response as RPCResponseParam).run { !this.fromClass && expandResponse.key == this.className} }.forEach { a->
+                val gene = wrapWithOptionalGene(expandResponse.value, true) as OptionalGene
+                val updatedParam = (a.response as RPCResponseParam).copyWithSpecifiedResponseBody(gene)
+                updatedParam.responseParsedWithClass()
+                val update = UpdateForRPCResponseParam(updatedParam)
+                a.addUpdateForParam(update)
+            }
+        }
     }
 
     private fun executeNewAction(action: RPCCallAction, index: Int, actionResults: MutableList<ActionResult>) : Boolean{
@@ -104,7 +136,7 @@ class RPCFitness : ApiWsFitness<RPCIndividual>() {
                     actionResult.setRPCException(response.exceptionInfoDto)
                     if (response.exceptionInfoDto.type == RPCExceptionType.CUSTOMIZED_EXCEPTION){
                         if (response.exceptionInfoDto.exceptionDto!=null){
-                            actionResult.setCustomizedExceptionBody(rpcHandler.getParamDtoJson(response.exceptionInfoDto.exceptionDto))
+                            actionResult.setCustomizedExceptionBody(rpcHandler.getJsonStringFromDto(response.exceptionInfoDto.exceptionDto))
                         } else
                             log.warn("ERROR: missing customized exception dto")
                     }
@@ -117,7 +149,7 @@ class RPCFitness : ApiWsFitness<RPCIndividual>() {
                     // check response
                     if (response.rpcResponse !=null){
                         Lazy.assert { action.responseTemplate != null }
-                        val responseParam = action.responseTemplate!!.copyContent()
+                        val responseParam = action.responseTemplate!!.copy() as RPCParam
                         rpcHandler.setGeneBasedOnParamDto(responseParam.gene, response.rpcResponse)
                         action.response = responseParam
 

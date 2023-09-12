@@ -6,9 +6,8 @@ import org.evomaster.client.java.instrumentation.shared.ObjectiveNaming
 import org.evomaster.core.EMConfig
 import org.evomaster.core.output.service.PartialOracles
 import org.evomaster.core.problem.rest.RestCallAction
-import org.evomaster.core.problem.httpws.service.HttpWsCallResult
+import org.evomaster.core.problem.httpws.HttpWsCallResult
 import org.evomaster.core.remote.service.RemoteController
-import org.evomaster.core.search.FitnessValue
 import org.evomaster.core.search.Solution
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -29,11 +28,6 @@ class Statistics : SearchListener {
         const val DISTINCT_ACTIONS = "distinctActions"
         const val COVERED_2XX = "covered2xx"
         const val GQL_NO_ERRORS = "gqlNoErrors"
-
-        /**
-         * represent that boot-time info is unavailable to collect
-         */
-        const val BOOT_TIME_INFO_UNAVAILABLE = -1
     }
 
     @Inject
@@ -184,9 +178,9 @@ class Statistics : SearchListener {
         val unitsInfo = sutInfo?.unitsInfoDto
         val bootTimeInfo = sutInfo?.bootTimeInfoDto
 
-        val targetsInfo = solution.overall.unionWithBootTimeCoveredTargets(null, idMapper, bootTimeInfo, BOOT_TIME_INFO_UNAVAILABLE)
-        val linesInfo = solution.overall.unionWithBootTimeCoveredTargets(ObjectiveNaming.LINE, idMapper, bootTimeInfo, BOOT_TIME_INFO_UNAVAILABLE)
-        val branchesInfo = solution.overall.unionWithBootTimeCoveredTargets(ObjectiveNaming.BRANCH, idMapper, bootTimeInfo, BOOT_TIME_INFO_UNAVAILABLE)
+        val targetsInfo = solution.overall.unionWithBootTimeCoveredTargets(null, idMapper, bootTimeInfo)
+        val linesInfo = solution.overall.unionWithBootTimeCoveredTargets(ObjectiveNaming.LINE, idMapper, bootTimeInfo)
+        val branchesInfo = solution.overall.unionWithBootTimeCoveredTargets(ObjectiveNaming.BRANCH, idMapper, bootTimeInfo)
 
         val list: MutableList<Pair> = mutableListOf()
 
@@ -253,6 +247,9 @@ class Statistics : SearchListener {
             add(Pair("searchTimeCoveredLines", "${linesInfo.searchTime}"))
             add(Pair("searchTimeCoveredBranches", "${branchesInfo.searchTime}"))
 
+            // statistic info for extractedSpecifiedDtos
+            add(Pair("numOfExtractedSpecifiedDtos", "${unitsInfo?.extractedSpecifiedDtos?.size?:0}"))
+
             val codes = codes(solution)
             add(Pair("avgReturnCodes", "" + codes.average()))
             add(Pair("maxReturnCodes", "" + codes.maxOrNull()))
@@ -287,7 +284,7 @@ class Statistics : SearchListener {
 
         //count the distinct number of API paths for which we have a 5xx
         return solution.individuals
-                .flatMap { it.evaluatedActions() }
+                .flatMap { it.evaluatedMainActions() }
                 .filter {
                     it.result is HttpWsCallResult && (it.result as HttpWsCallResult).hasErrorCode()
                 }
@@ -301,7 +298,7 @@ class Statistics : SearchListener {
         //count the distinct number of API paths for which we have a failed oracle
         // NOTE: calls with an error code (5xx) are excluded from this count.
         return solution.individuals
-                .flatMap { it.evaluatedActions() }
+                .flatMap { it.evaluatedMainActions() }
                 .filter {
                     it.result is HttpWsCallResult
                             && it.action is RestCallAction
@@ -317,7 +314,7 @@ class Statistics : SearchListener {
 
         //count the distinct number of API paths for which we have a 2xx
         return solution.individuals
-                .flatMap { it.evaluatedActions() }
+                .flatMap { it.evaluatedMainActions() }
                 .filter {
                     it.result is HttpWsCallResult && (it.result as HttpWsCallResult).getStatusCode()?.let { c -> c in 200..299 } ?: false
                 }
@@ -329,13 +326,13 @@ class Statistics : SearchListener {
     private fun codes(solution: Solution<*>): List<Int> {
 
         return solution.individuals
-                .flatMap { it.evaluatedActions() }
+                .flatMap { it.evaluatedMainActions() }
                 .filter { it.result is HttpWsCallResult }
                 .map { it.action.getName() }
                 .distinct() //distinct names of actions, ie VERB:PATH
                 .map { name ->
                     solution.individuals
-                            .flatMap { it.evaluatedActions() }
+                            .flatMap { it.evaluatedMainActions() }
                             .filter { it.action.getName() == name }
                             .map { (it.result as HttpWsCallResult).getStatusCode() }
                             .distinct()

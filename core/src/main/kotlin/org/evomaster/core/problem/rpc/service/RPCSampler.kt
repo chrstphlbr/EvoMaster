@@ -5,10 +5,13 @@ import org.evomaster.client.java.controller.api.dto.SutInfoDto
 import org.evomaster.core.EMConfig
 import org.evomaster.core.database.SqlInsertBuilder
 import org.evomaster.core.problem.api.service.ApiWsSampler
+import org.evomaster.core.problem.enterprise.EnterpriseActionGroup
+import org.evomaster.core.problem.graphql.GraphQLAction
 import org.evomaster.core.problem.rpc.RPCCallAction
 import org.evomaster.core.problem.rpc.RPCIndividual
 import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.remote.service.RemoteController
+import org.evomaster.core.search.ActionComponent
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import javax.annotation.PostConstruct
@@ -25,8 +28,6 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
     @Inject
     protected lateinit var configuration: EMConfig
 
-    @Inject(optional = true)
-    protected lateinit var rc: RemoteController
 
     @Inject
     protected lateinit var rpcHandler: RPCEndpointsHandler
@@ -72,12 +73,7 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
         return sampleAtRandom()
     }
 
-    override fun initSqlInfo(infoDto: SutInfoDto) {
-        if (infoDto.sqlSchemaDto != null && configuration.shouldGenerateSqlData()) {
-            sqlInsertBuilder = SqlInsertBuilder(infoDto.sqlSchemaDto, rc)
-            existingSqlData = sqlInsertBuilder!!.extractExistingPKs()
-        }
-    }
+
 
     /**
      * sample an action from [actionCluster] at random
@@ -85,7 +81,7 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
      */
     fun sampleRandomAction(noAuthProbability: Double = 0.05, noSeedProbability: Double = 0.05): RPCCallAction {
         val action = randomness.choose(actionCluster).copy() as RPCCallAction
-        randomizeActionGenes(action)
+        action.doInitialize(randomness)
         if (randomness.nextBoolean(noAuthProbability)){
             action.setNoAuth()
         }else
@@ -98,8 +94,13 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
 
     override fun sampleAtRandom(): RPCIndividual {
         val len = randomness.nextInt(1, config.maxTestSize)
-        val actions = (0 until len).map { sampleRandomAction(0.05)}
-        return createRPCIndividual(actions.toMutableList())
+        val actions = (0 until len).map {
+            val a = sampleRandomAction(0.05)
+            EnterpriseActionGroup(mutableListOf(a), RPCCallAction::class.java)
+        }
+        val ind = createRPCIndividual(actions.toMutableList())
+        ind.doGlobalInitialize(searchGlobalState)
+        return ind
     }
 
     /*
@@ -113,7 +114,14 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
         createSingleCallIndividualOnEachAction()
 
         if (config.seedTestCases && infoDto.rpcProblem?.seededTestDtos?.isNotEmpty() == true){
-            adHocInitialIndividuals.addAll(rpcHandler.handledSeededTests(infoDto.rpcProblem.seededTestDtos))
+            adHocInitialIndividuals.addAll(rpcHandler.handledSeededTests(infoDto.rpcProblem.seededTestDtos).map{
+                it.seeAllActions().forEach { a -> a.doInitialize() }
+                it
+            })
+        }
+
+        adHocInitialIndividuals.forEach {
+            it.doGlobalInitialize(searchGlobalState)
         }
     }
 
@@ -122,18 +130,24 @@ class RPCSampler: ApiWsSampler<RPCIndividual>() {
                 .filter { a -> a.value is RPCCallAction }
                 .forEach { a ->
                     val copy = a.value.copy() as RPCCallAction
-                    randomizeActionGenes(copy)
+                    copy.doInitialize(randomness)
                     rpcHandler.actionWithAllAuth(copy).forEach { actionWithAuth->
-                        rpcHandler.actionWithAllCandidates(actionWithAuth).forEach { actionWithSeeded->
-                            val ind = createRPCIndividual(mutableListOf(actionWithSeeded))
-                            adHocInitialIndividuals.add(ind)
+                        rpcHandler.actionWithAllCandidates(actionWithAuth)
+                            .forEach { actionWithSeeded->
+                                val a = EnterpriseActionGroup(mutableListOf(actionWithSeeded), RPCCallAction::class.java)
+                                val ind = createRPCIndividual(mutableListOf(a))
+                                adHocInitialIndividuals.add(ind)
                         }
                     }
                 }
     }
 
-    private fun createRPCIndividual(actions : MutableList<RPCCallAction>) : RPCIndividual{
+    private fun createRPCIndividual(actions : MutableList<EnterpriseActionGroup>) : RPCIndividual{
         // enable tracking in rpc
-        return RPCIndividual(actions, trackOperator = if(config.trackingEnabled()) this else null, index = if (config.trackingEnabled()) time.evaluatedIndividuals else -1)
+        return RPCIndividual(
+            trackOperator = if(config.trackingEnabled()) this else null,
+            index = if (config.trackingEnabled()) time.evaluatedIndividuals else -1,
+            allActions=actions as MutableList<ActionComponent>
+        )
     }
 }

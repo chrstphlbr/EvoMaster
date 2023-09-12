@@ -7,23 +7,24 @@ import org.evomaster.client.java.controller.problem.rpc.schema.types.AccessibleS
 import org.evomaster.client.java.controller.problem.rpc.schema.types.PrimitiveOrWrapperType;
 
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Primitive types Param
  */
-public abstract class PrimitiveOrWrapperParam<V> extends NamedTypedValue<PrimitiveOrWrapperType, V> implements NumericConstraintBase<Long> {
+public abstract class PrimitiveOrWrapperParam<V> extends NamedTypedValue<PrimitiveOrWrapperType, V> implements NumericConstraintBase<BigDecimal> {
 
     /**
      * min value if it is specified
      */
-    private Long min;
+    private BigDecimal min;
 
     /**
      * max value of it is specified
      */
-    private Long max;
+    private BigDecimal max;
 
     private boolean minInclusive = true;
 
@@ -119,28 +120,24 @@ public abstract class PrimitiveOrWrapperParam<V> extends NamedTypedValue<Primiti
     }
 
     @Override
-    public Long getMin() {
+    public BigDecimal getMin() {
         return min;
     }
 
     @Override
-    public void setMin(Long min) {
-        if (this.min != null){
-            this.min = Math.max(this.min, min);
-        }else
+    public void setMin(BigDecimal min) {
+        if (this.min == null || (min != null && this.min.compareTo(min) < 0) )
             this.min = min;
     }
 
     @Override
-    public Long getMax() {
+    public BigDecimal getMax() {
         return max;
     }
 
     @Override
-    public void setMax(Long max) {
-        if (this.max != null)
-            this.max = Math.min(this.max, max);
-        else
+    public void setMax(BigDecimal max) {
+        if (this.max == null || (max != null && this.max.compareTo(max) > 0) )
             this.max = max;
     }
 
@@ -156,14 +153,14 @@ public abstract class PrimitiveOrWrapperParam<V> extends NamedTypedValue<Primiti
             // ignore instance of primitive types if the value is not assigned
             return Collections.emptyList();
         }
-
-        if (accessibleSchema == null || accessibleSchema.isAccessible){
-            code = CodeJavaGenerator.oneLineInstance(isDeclaration, doesIncludeName, getType().getFullTypeName(), variableName, getValueAsJavaString());
-        } else{
-            if (accessibleSchema.setterMethodName == null)
-                throw new IllegalStateException("Error: private field, but there is no setter method");
+        if (accessibleSchema != null && accessibleSchema.setterMethodName != null)
             code = CodeJavaGenerator.oneLineSetterInstance(accessibleSchema.setterMethodName, getCastType(), variableName, getValueAsJavaString());
+        else {
+            if (accessibleSchema != null && !accessibleSchema.isAccessible)
+                throw new IllegalStateException("Error: private field, but there is no setter method");
+            code = CodeJavaGenerator.oneLineInstance(isDeclaration, doesIncludeName, getType().getFullTypeName(), variableName, getValueAsJavaString());
         }
+
         return Collections.singletonList(CodeJavaGenerator.getIndent(indent)+ code);
     }
 
@@ -198,7 +195,9 @@ public abstract class PrimitiveOrWrapperParam<V> extends NamedTypedValue<Primiti
         } else if (Long.class.equals(type) || long.class.equals(type)) {
             return Long.valueOf(value.toString());
         }  else if (Character.class.equals(type) || char.class.equals(type)) {
-            assert s.length() == 1;
+//            assert s.length() == 1;
+            if (s.length() != 1)
+                throw new IllegalArgumentException("it cannot be recognized as a char:"+s);
             return s.charAt(0);
         } else if (Byte.class.equals(type) || byte.class.equals(type)) {
             return Byte.valueOf(s);

@@ -7,7 +7,12 @@ enum class ActionFilter {
     ALL,
 
     /**
-     * actions which are in initialization, e.g., HttpWsIndividual
+     * The main actions that are executable, eg API calls
+     */
+    MAIN_EXECUTABLE,
+
+    /**
+     * actions which are in initialization
      */
     INIT,
 
@@ -24,5 +29,15 @@ enum class ActionFilter {
     /**
      * actions which are not SQL-related actions
      */
-    NO_SQL
+    NO_SQL,
+
+    /**
+     * actions which are External Service related actions
+     */
+    ONLY_EXTERNAL_SERVICE,
+
+    /**
+     * actions which are not external service actions
+     */
+    NO_EXTERNAL_SERVICE,
 }

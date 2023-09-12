@@ -2,7 +2,10 @@ package org.evomaster.core.output.service
 
 import com.google.inject.Inject
 import org.evomaster.core.output.Lines
+import org.evomaster.core.output.TestCase
 import org.evomaster.core.output.formatter.OutputFormatter
+import org.evomaster.core.problem.enterprise.EnterpriseActionGroup
+import org.evomaster.core.problem.externalservice.rpc.RPCExternalServiceAction
 import org.evomaster.core.problem.rpc.RPCCallAction
 import org.evomaster.core.problem.rpc.RPCCallResult
 import org.evomaster.core.problem.rpc.RPCIndividual
@@ -10,32 +13,42 @@ import org.evomaster.core.problem.rpc.service.RPCEndpointsHandler
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.ActionResult
 import org.evomaster.core.search.EvaluatedIndividual
-import org.evomaster.core.search.gene.GeneUtils
+import org.evomaster.core.search.gene.utils.GeneUtils
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.math.max
 
 /**
  * created by manzhang on 2021/11/26
  */
-class RPCTestCaseWriter : WebTestCaseWriter() {
+class RPCTestCaseWriter : ApiTestCaseWriter() {
 
     companion object{
         private val log: Logger = LoggerFactory.getLogger(RPCTestCaseWriter::class.java)
+
+        /**
+         * name of method for customizing handling of external services for RPC problem
+         */
+        const val CUSTOMIZED_EXTERNAL_SERVICES = "mockRPCExternalServicesWithCustomizedHandling"
     }
 
     @Inject
     protected lateinit var rpcHandler: RPCEndpointsHandler
 
     override fun handleActionCalls(
-        lines: Lines,
-        baseUrlOfSut: String,
-        ind: EvaluatedIndividual<*>,
-        insertionVars: MutableList<Pair<String, String>>
+            lines: Lines,
+            baseUrlOfSut: String,
+            ind: EvaluatedIndividual<*>,
+            insertionVars: MutableList<Pair<String, String>>,
+            testCaseName: String,
+            testSuitePath: Path?
     ) {
 
         if (ind.individual is RPCIndividual){
-            ind.evaluatedActions().forEach { evaluatedAction->
+            ind.evaluatedMainActions().forEachIndexed {index, evaluatedAction->
 
                 lines.addEmpty()
 
@@ -43,20 +56,21 @@ class RPCTestCaseWriter : WebTestCaseWriter() {
                 val res = evaluatedAction.result as RPCCallResult
 
                 if (res.failedCall()) {
-                    addActionInTryCatch(call, lines, res, baseUrlOfSut)
+                    addActionInTryCatch(call,index, testCaseName, lines, res, testSuitePath, baseUrlOfSut)
                 } else {
-                    addActionLines(call, lines, res, baseUrlOfSut)
+                    addActionLines(call,index, testCaseName, lines, res, testSuitePath, baseUrlOfSut)
                 }
             }
         }
     }
 
-    override fun addActionLines(action: Action, lines: Lines, result: ActionResult, baseUrlOfSut: String) {
+    override fun addActionLines(action: Action, index: Int, testCaseName: String, lines: Lines, result: ActionResult, testSuitePath: Path?, baseUrlOfSut: String) {
 
         val rpcCallAction = (action as? RPCCallAction)?: throw IllegalStateException("action must be RPCCallAction, but it is ${action::class.java.simpleName}")
         val rpcCallResult = (result as? RPCCallResult)?: throw IllegalStateException("result must be RPCCallResult, but it is ${action::class.java.simpleName}")
 
-
+        // generate actions for handling external services with customized methods
+        handleCustomizedExternalServiceHandling(action, index, testCaseName, true, lines, testSuitePath)
 
         val resVarName = createUniqueResponseVariableName()
 
@@ -117,7 +131,7 @@ class RPCTestCaseWriter : WebTestCaseWriter() {
             if (authAction!=null){
                 // check if it is local
                 if (authAction.clientInfo == null){
-                    val authInfo = "\"" +GeneUtils.applyEscapes(authAction.requestParams[0].stringValue, GeneUtils.EscapeMode.JSON, format) +"\""
+                    val authInfo = "\"" + GeneUtils.applyEscapes(authAction.requestParams[0].stringValue, GeneUtils.EscapeMode.JSON, format) +"\""
 
                     if (format.isJavaOrKotlin()){
                         lines.add(TestSuiteWriter.controller+"."+authAction.actionName+"("+authInfo+")")
@@ -143,7 +157,7 @@ class RPCTestCaseWriter : WebTestCaseWriter() {
 
     }
 
-    override fun shouldFailIfException(result: ActionResult): Boolean {
+    override fun shouldFailIfExceptionNotThrown(result: ActionResult): Boolean {
         //TODO Man: need a further check
         return false
     }
@@ -167,6 +181,26 @@ class RPCTestCaseWriter : WebTestCaseWriter() {
             format.isJava() -> lines.append(");")
         }
     }
+
+
+    private fun saveJsonAndPrintReadJson(testCaseName: String, actionIndex: Int, json: String, lines: Lines){
+        val fileName = getFileNameToSaveMockedResponsesDtoAsJson(testCaseName, actionIndex)
+
+        val body = if (OutputFormatter.JSON_FORMATTER.isValid(json)) {
+            OutputFormatter.JSON_FORMATTER.getFormatted(json)
+        } else {
+            json
+        }
+
+        val testResourcePath = Paths.get(config.testResourcePathToSaveMockedResponse)
+
+        saveTextToDisk(body, testResourcePath, fileName)
+
+        lines.append("${TestSuiteWriter.controller}.readFileAsStringFromTestResource(\"$fileName\")")
+    }
+
+    private fun getFileNameToSaveMockedResponsesDtoAsJson(testCaseName: String, actionIndex: Int) = "${testCaseName}_MockedResponseInfo_$actionIndex.json"
+
 
     private fun printExecutionJson(json: String, lines: Lines) {
 
@@ -230,11 +264,72 @@ class RPCTestCaseWriter : WebTestCaseWriter() {
         }
     }
 
+    /**
+     * handle generation of customized external service handling
+     * @param action is the call to be generated
+     * @param index the index of action
+     * @param testCaseName the test which contains the action [action]
+     * @param enable a configuration to enable/disable specified mocking configuration
+     * @param lines are generated lines which save the generated test scripts
+     */
+    fun handleCustomizedExternalServiceHandling(action: Action, index: Int, testCaseName: String, enable: Boolean, lines: Lines, testSuitePath: Path?){
+        if(config.enableCustomizedExternalServiceHandling && action.parent is EnterpriseActionGroup){
+            val group = action.parent as EnterpriseActionGroup
+
+            /*
+                now only support customized handling of external service for RPC problem
+                TODO for other problems when needed
+             */
+            val exActions = group.getExternalServiceActions()
+                    .filterIsInstance<RPCExternalServiceAction>()
+                    .map { rpcHandler.transformMockRPCExternalServiceDto(it) }
+
+            if (exActions.isNotEmpty()){
+                when {
+                    format.isKotlin() -> lines.add("${TestSuiteWriter.controller}.$CUSTOMIZED_EXTERNAL_SERVICES(")
+                    format.isJava() -> lines.add("${TestSuiteWriter.controller}.$CUSTOMIZED_EXTERNAL_SERVICES(")
+                }
+
+                val mockedConfigAsJson = rpcHandler.getJsonStringFromDto(exActions)
+
+                if (config.saveMockedResponseAsSeparatedFile){
+                    if (config.testResourcePathToSaveMockedResponse.isBlank())
+                        throw IllegalArgumentException("testResourcePathToSaveMockedResponse cannot be empty if it is required to save mocked responses in separated files")
+                    saveJsonAndPrintReadJson(testCaseName,index,mockedConfigAsJson, lines)
+                }else
+                    printExecutionJson(mockedConfigAsJson, lines)
+
+                when {
+                    format.isKotlin() -> lines.append(",$enable)")
+                    format.isJava() -> lines.append(",$enable);")
+                }
+            }
+
+        }
+    }
+
+
+    fun resetExternalServicesWithCustomizedMethod() : String {
+        if (!format.isJavaOrKotlin())
+            throw IllegalStateException("Only support to generate Java/Kotlin tests with a reset of RPC external services with customized method")
+        return "${TestSuiteWriter.controller}.$CUSTOMIZED_EXTERNAL_SERVICES(null,false)${if (format.isJava()) ";" else ""}"
+    }
+
     /*
         the inner class in java could be represented with $ in string format
         for instance org.thrift.ncs.client.NcsService$Client,
         then we need to further handle it
      */
     private fun handleClientType(clientType: String) = clientType.replace("\$",".")
+
+    override fun additionalTestHandling(tests: List<TestCase>) {
+        if (!config.enableRPCCustomizedTestOutput) return
+
+        try {
+            rpcHandler.handleCustomizedTests(tests.map { t-> t.test as EvaluatedIndividual<RPCIndividual> })
+        }catch (e : Exception){
+            log.warn("Fail to handle customized tests: ${e.message}")
+        }
+    }
 
 }

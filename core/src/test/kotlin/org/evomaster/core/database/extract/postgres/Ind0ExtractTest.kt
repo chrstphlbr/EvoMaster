@@ -3,6 +3,7 @@ package org.evomaster.core.database.extract.postgres
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.SqlInsertBuilder
+import org.evomaster.core.search.gene.UUIDGene
 import org.evomaster.core.search.gene.datetime.DateGene
 import org.evomaster.core.search.gene.regex.RegexGene
 import org.evomaster.core.search.gene.sql.*
@@ -58,7 +59,7 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("x", setOf("expr_date"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertTrue(genes.any { it is DateGene })
 
@@ -69,8 +70,8 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
         val schema = SchemaExtractor.extract(connection)
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("x", setOf("id"))
-        val genes = actions[0].seeGenes()
-        assertTrue(genes.firstIsInstance<SqlPrimaryKeyGene>().gene is SqlUUIDGene)
+        val genes = actions[0].seeTopGenes()
+        assertTrue(genes.firstIsInstance<SqlPrimaryKeyGene>().gene is UUIDGene)
     }
 
     @Test
@@ -79,7 +80,7 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("x", setOf("xmlData"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertTrue(genes.any { it is SqlXMLGene })
     }
@@ -91,7 +92,7 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("y", setOf("jsonData"))
-        val genes = actions[0].seeGenes().flatMap { it.flatView() }
+        val genes = actions[0].seeTopGenes().flatMap { it.flatView() }
 
         assertTrue(genes.any { it is SqlJSONGene })
     }
@@ -103,7 +104,7 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("x", setOf("w_id"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertTrue(genes.any { it is RegexGene })
         assertTrue(genes.filterIsInstance<RegexGene>().any { g -> g.name.equals("w_id", ignoreCase = true) })
@@ -115,7 +116,7 @@ class Ind0ExtractTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("x", setOf("f_id"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertTrue(genes.any { it is RegexGene })
         val regexGene = genes.firstIsInstance<RegexGene>()

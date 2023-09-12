@@ -5,10 +5,10 @@ import org.evomaster.client.java.controller.db.SqlScriptRunner
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.IntegerGene
-import org.evomaster.core.search.gene.sql.SqlNullable
+import org.evomaster.core.search.gene.numeric.IntegerGene
+import org.evomaster.core.search.gene.optional.NullableGene
 import org.evomaster.core.search.gene.sql.SqlPrimaryKeyGene
-import org.evomaster.core.search.gene.StringGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -49,12 +49,12 @@ class SqlTextColumnTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("people", setOf("id", "name", "address"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(3, genes.size)
         assertTrue(genes[0] is SqlPrimaryKeyGene)
         assertTrue(genes[1] is StringGene)
-        assertTrue(genes[2] is SqlNullable && (genes[2] as SqlNullable).gene is StringGene)
+        assertTrue(genes[2] is NullableGene && (genes[2] as NullableGene).gene is StringGene)
     }
 
     @Test
@@ -63,11 +63,11 @@ class SqlTextColumnTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("people", setOf("id", "name", "address"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
         val nameValue = (genes[1] as StringGene).value
-        val addressValue = ((genes[2] as SqlNullable).gene as StringGene).value
+        val addressValue = ((genes[2] as NullableGene).gene as StringGene).value
 
         val query = "Select * from people where id=%s".format(idValue)
 
@@ -92,7 +92,7 @@ class SqlTextColumnTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("people", setOf("id", "name", "address"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
 
@@ -100,7 +100,7 @@ class SqlTextColumnTest : ExtractTestBasePostgres() {
         val twoQuotesStr = "'hi'"
 
         (genes[1] as StringGene).copyValueFrom(StringGene(genes[1].name, oneQuoteStr))
-        ((genes[2] as SqlNullable).gene as StringGene).copyValueFrom(StringGene(genes[1].name, twoQuotesStr))
+        ((genes[2] as NullableGene).gene as StringGene).copyValueFrom(StringGene(genes[1].name, twoQuotesStr))
 
         val query = "Select * from people where id=%s".format(idValue)
 

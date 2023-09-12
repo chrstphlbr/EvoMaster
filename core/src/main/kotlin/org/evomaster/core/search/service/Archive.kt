@@ -6,11 +6,11 @@ import org.evomaster.core.EMConfig
 import org.evomaster.core.EMConfig.FeedbackDirectedSampling.FOCUSED_QUICKEST
 import org.evomaster.core.EMConfig.FeedbackDirectedSampling.LAST
 import org.evomaster.core.Lazy
-import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.Termination
-import org.evomaster.core.problem.httpws.service.HttpWsCallResult
+import org.evomaster.core.problem.httpws.HttpWsCallResult
 import org.evomaster.core.search.*
 import org.evomaster.core.search.impact.impactinfocollection.ImpactsOfIndividual
+import org.evomaster.core.search.service.IdMapper.Companion.LOCAL_OBJECTIVE_KEY
 import org.evomaster.core.search.service.monitor.SearchProcessMonitor
 import org.evomaster.core.search.service.mutator.EvaluatedMutation
 import org.evomaster.core.search.tracer.ArchiveMutationTrackService
@@ -165,6 +165,10 @@ class Archive<T> where T : Individual {
     }
 
     private fun chooseTarget(toChooseFrom: Set<Int>): Int {
+
+        if(!config.isMIO()){
+            return  randomness.choose(toChooseFrom)
+        }
 
         return when (config.feedbackDirectedSampling) {
             LAST -> toChooseFrom.minByOrNull {
@@ -558,6 +562,21 @@ class Archive<T> where T : Individual {
             else
                 find{i -> i.individual.sameActions(other)}!!.impactInfo?.clone()
         }
+    }
+
+    /**
+     * @return whether to skip targets for impact collections
+     */
+    fun skipTargetForImpactCollection(id : Int): Boolean{
+        if (config.excludedTargetsForImpactCollection.isEmpty()) return false
+
+        val local = IdMapper.isLocal(id)
+
+        if (local){
+            return config.excludedTargetsForImpactCollection.contains(LOCAL_OBJECTIVE_KEY)
+        }
+
+        return config.excludedTargetsForImpactCollection.any { idMapper.getDescriptiveId(id).startsWith(it) }
     }
 
 

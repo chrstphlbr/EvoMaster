@@ -5,9 +5,7 @@ import org.evomaster.client.java.controller.db.SqlScriptRunner
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.*
-import org.evomaster.core.search.gene.regex.RegexGene
-import org.evomaster.core.search.gene.sql.SqlAutoIncrementGene
+import org.evomaster.core.search.gene.collection.EnumGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -36,7 +34,7 @@ class EnumeratedTypesTest : ExtractTestBasePostgres() {
             )
         )
 
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
         assertTrue(genes[0] is EnumGene<*>)

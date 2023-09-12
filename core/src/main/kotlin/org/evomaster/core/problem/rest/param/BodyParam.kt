@@ -1,8 +1,8 @@
 package org.evomaster.core.problem.rest.param
 
 import org.evomaster.core.logging.LoggingUtil
-import org.evomaster.core.problem.api.service.param.Param
-import org.evomaster.core.search.gene.EnumGene
+import org.evomaster.core.problem.api.param.Param
+import org.evomaster.core.search.gene.collection.EnumGene
 import org.evomaster.core.search.gene.Gene
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -17,6 +17,7 @@ class BodyParam(gene: Gene,
     }
 
     val contenTypeGene : EnumGene<String>
+
 
     init {
         typeGene.values.forEach {
@@ -50,13 +51,15 @@ class BodyParam(gene: Gene,
         }
 
         contenTypeGene = EnumGene(typeGene.name, options, typeGene.index)
+        if(typeGene.initialized) contenTypeGene.markAllAsInitialized()
+        // local id of typeGene needs to be assigned for the newly created contenTypeGene since it is from copy
+        if (typeGene.hasLocalId()) contenTypeGene.setLocalId(typeGene.getLocalId())
         addChild(contenTypeGene)
     }
 
-    override fun getChildren(): List<Gene> = listOf(gene, contenTypeGene)
 
     override fun copyContent(): Param {
-        return BodyParam(gene.copyContent(), contenTypeGene.copyContent() as EnumGene<String>)
+        return BodyParam(gene.copy(), contenTypeGene.copy() as EnumGene<String>)
     }
 
     override fun seeGenes() = listOf(gene, contenTypeGene)

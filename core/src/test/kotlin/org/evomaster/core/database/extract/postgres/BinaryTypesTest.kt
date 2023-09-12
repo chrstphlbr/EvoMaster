@@ -5,7 +5,8 @@ import org.evomaster.client.java.controller.db.SqlScriptRunner
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.*
+import org.evomaster.core.search.gene.collection.ArrayGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
 import org.evomaster.core.search.gene.sql.SqlBinaryStringGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -35,7 +36,7 @@ class BinaryTypesTest : ExtractTestBasePostgres() {
             )
         )
 
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
         assertTrue(genes[0] is SqlBinaryStringGene) //character varying
@@ -63,24 +64,24 @@ class BinaryTypesTest : ExtractTestBasePostgres() {
         )
         )
 
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
         assertTrue(genes[0] is SqlBinaryStringGene)
 
         val sqlBinaryStringGene = genes[0] as SqlBinaryStringGene
 
-        val arrayGene  = sqlBinaryStringGene.innerGene()[0] as ArrayGene<IntegerGene>
-        val integerGene0 = arrayGene.template.copyContent() as IntegerGene
+        val arrayGene  = sqlBinaryStringGene.getViewOfChildren()[0] as ArrayGene<IntegerGene>
+        val integerGene0 = arrayGene.template.copy() as IntegerGene
         integerGene0.value = 0
 
-        val integerGene1 = arrayGene.template.copyContent() as IntegerGene
+        val integerGene1 = arrayGene.template.copy() as IntegerGene
         integerGene1.value = 42
 
-        val integerGene2 = arrayGene.template.copyContent() as IntegerGene
+        val integerGene2 = arrayGene.template.copy() as IntegerGene
         integerGene2.value = 255
 
-        val integerGene3= arrayGene.template.copyContent() as IntegerGene
+        val integerGene3= arrayGene.template.copy() as IntegerGene
         integerGene3.value = 16
 
         arrayGene.addElement(integerGene0)

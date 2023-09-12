@@ -1,6 +1,7 @@
 package org.evomaster.core.search.algorithms
 
 import org.evomaster.core.EMConfig
+import org.evomaster.core.Lazy
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.Solution
 import org.evomaster.core.search.service.SearchAlgorithm
@@ -20,20 +21,15 @@ class MioAlgorithm<T> : SearchAlgorithm<T>() where T : Individual {
 
     override fun searchOnce() {
 
-
             val randomP = apc.getProbRandomSampling()
 
             if(archive.isEmpty()
                     || sampler.hasSpecialInit()
                     || randomness.nextBoolean(randomP)) {
 
-                val ind = if(sampler.hasSpecialInit()){
-                    // If there is still special init set, sample from that
-                    sampler.smartSample()
-                } else {
-                    //note this can still be a smart sample
-                    sampler.sample()
-                }
+                val ind = sampler.sample()
+
+                Lazy.assert { ind.isInitialized() && ind.searchGlobalState!=null }
 
                 ff.calculateCoverage(ind)?.run {
 

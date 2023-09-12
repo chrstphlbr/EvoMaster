@@ -47,10 +47,11 @@ abstract class FitnessFunction<T>  where T : Individual {
      */
     fun calculateCoverage(individual: T, targets: Set<Int> = setOf()) : EvaluatedIndividual<T>?{
 
-        val a = individual.seeActions().filter { a -> a.shouldCountForFitnessEvaluations() }.count()
+        val a = individual.seeMainExecutableActions().count()
 
         if(time.averageOverheadMsBetweenTests.isRecordingTimer()){
-            time.averageOverheadMsBetweenTests.addElapsedTime()
+            val computation = time.averageOverheadMsBetweenTests.addElapsedTime()
+            executionInfoReporter.addLatestComputationOverhead(computation, time.evaluatedIndividuals)
         }
 
         var ei = calculateIndividualWithPostHandling(individual, targets, a)
@@ -96,7 +97,7 @@ abstract class FitnessFunction<T>  where T : Individual {
 
     private fun calculateIndividualWithPostHandling(individual: T, targets: Set<Int>, actionsSize: Int) : EvaluatedIndividual<T>?{
 
-        val ei = time.measureTimeMillis(
+        val ei = SearchTimeController.measureTimeMillis(
                 { t, ind ->
                     time.reportExecutedIndividualTime(t, actionsSize)
                     ind?.executionTimeMs = t
@@ -123,6 +124,7 @@ abstract class FitnessFunction<T>  where T : Individual {
 
     private fun handleExecutionInfo(ei: EvaluatedIndividual<T>?) {
         ei?:return
-        executionInfoReporter.sqlExecutionInfo(ei.individual.seeActions(), ei.fitness.databaseExecutions)
+        executionInfoReporter.sqlExecutionInfo(ei.individual.seeAllActions(), ei.fitness.databaseExecutions)
+        executionInfoReporter.actionExecutionInfo(ei.individual, ei.executionTimeMs, time.evaluatedIndividuals)
     }
 }

@@ -6,8 +6,12 @@ import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
 import org.evomaster.core.search.gene.*
+import org.evomaster.core.search.gene.collection.ArrayGene
+import org.evomaster.core.search.gene.numeric.DoubleGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
 import org.evomaster.core.search.gene.sql.SqlJSONGene
 import org.evomaster.core.search.gene.sql.SqlPrimaryKeyGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.postgresql.util.PGobject
@@ -25,7 +29,7 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(2, genes.size)
         assertTrue(genes[0] is SqlPrimaryKeyGene)
@@ -39,7 +43,7 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
         assertTrue(genes[1] is SqlJSONGene)
@@ -71,7 +75,7 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
 
         val action = actions[0]
-        val genes = action.seeGenes()
+        val genes = action.seeTopGenes()
 
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
@@ -118,7 +122,7 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
 
         val action = actions[0]
-        val genes = action.seeGenes()
+        val genes = action.seeTopGenes()
 
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
@@ -162,15 +166,15 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
 
         val action = actions[0]
-        val genes = action.seeGenes()
+        val genes = action.seeTopGenes()
 
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value
         assertTrue(genes[1] is SqlJSONGene)
 
         val arrayGene = ArrayGene("arrayValue", template = IntegerGene("item", value = 0))
-        arrayGene.getAllElements().add(IntegerGene("value1", 1))
-        arrayGene.getAllElements().add(IntegerGene("value2", 2))
+        arrayGene.addElement(IntegerGene("value1", 1))
+        arrayGene.addElement(IntegerGene("value2", 2))
 
 
         val objectGene = ObjectGene("jsondata", fields = listOf(arrayGene))
@@ -211,7 +215,7 @@ class SqlJSONBColumnTest : ExtractTestBasePostgres() {
         val actions = builder.createSqlInsertionAction("people", setOf("id", "jsonData"))
 
         val action = actions[0]
-        val genes = action.seeGenes()
+        val genes = action.seeTopGenes()
 
 
         val idValue = ((genes[0] as SqlPrimaryKeyGene).gene as IntegerGene).value

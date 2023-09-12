@@ -1,6 +1,7 @@
 package org.evomaster.core.problem.rest.service
 
 import com.google.inject.Inject
+import org.evomaster.core.database.DbAction
 import org.evomaster.core.problem.rest.RestIndividual
 import org.evomaster.core.problem.rest.resource.RestResourceCalls
 import org.evomaster.core.search.EvaluatedIndividual
@@ -22,11 +23,6 @@ class ResourceRestMutator : StandardMutator<RestIndividual>() {
     @Inject
     private lateinit var dm : ResourceDepManageService
 
-    override fun postActionAfterMutation(mutatedIndividual: RestIndividual, mutated: MutatedGeneSpecification?) {
-        // repair db among dbactions
-        super.postActionAfterMutation(mutatedIndividual, null)
-    }
-
     override fun genesToMutation(individual: RestIndividual, evi: EvaluatedIndividual<RestIndividual>, targets: Set<Int>): List<Gene> {
         val restGenes = individual.getResourceCalls().filter(RestResourceCalls::isMutable).flatMap { it.seeGenes(
             GeneFilter.NO_SQL
@@ -35,10 +31,10 @@ class ResourceRestMutator : StandardMutator<RestIndividual>() {
         if (!config.generateSqlDataWithSearch)
             return restGenes
 
-        // 1) SQL genes in initialization plus 2) SQL genes in resource handling plus 3) rest actions in resource handling
-        return individual.seeInitializingActions().flatMap { it.seeGenes() }.filter(Gene::isMutable).plus(
-            individual.getResourceCalls().filter(RestResourceCalls::isMutable).flatMap { it.seeGenes(GeneFilter.ONLY_SQL) }
-        ).plus(restGenes)
+        return individual.seeInitializingActions().flatMap { it.seeTopGenes() }.filter(Gene::isMutable)
+            .plus(individual.getResourceCalls().filter(RestResourceCalls::isMutable).flatMap { it.seeGenes(GeneFilter.ONLY_SQL) })
+            .plus(restGenes)
+            .plus(individual.seeExternalServiceActions().flatMap { it.seeTopGenes() }.filter(Gene::isMutable))
 
     }
 

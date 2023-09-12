@@ -2,6 +2,7 @@ package org.evomaster.core.search.mutationweight
 
 import io.swagger.parser.OpenAPIParser
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
+import org.evomaster.core.EMConfig
 import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.schema.Column
 import org.evomaster.core.database.schema.ColumnDataType
@@ -12,18 +13,20 @@ import org.evomaster.core.problem.rest.RestIndividual
 import org.evomaster.core.problem.rest.SampleType
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.gene.datetime.DateGene
-import org.evomaster.core.search.gene.IntegerGene
+import org.evomaster.core.search.gene.numeric.IntegerGene
 import org.evomaster.core.search.gene.ObjectGene
 import org.evomaster.core.search.gene.sql.SqlPrimaryKeyGene
 
 object GeneWeightTestSchema {
 
+    private val config : EMConfig = EMConfig()
     private val actions: MutableMap<String, Action> = mutableMapOf()
 
     init {
         RestActionBuilderV3.addActionsFromSwagger(
             OpenAPIParser().readLocation("/swagger/artificial/gene_weight.json", null, null).openAPI,
-            actions
+            actions,
+            enableConstraintHandling = config.enableSchemaConstraintHandling
         )
     }
 
@@ -52,7 +55,7 @@ object GeneWeightTestSchema {
         val action1 = actions[name]?: throw IllegalArgumentException("$name cannot found in defined schema")
 
         // 1 dbaction with 3 genes, and 1 restaction with 1 bodyGene and 1 contentType
-        return RestIndividual(actions = (0 until numRestAction).map { action1.copyContent() as RestCallAction }.toMutableList(), dbInitialization = dbActions, sampleType = SampleType.RANDOM)
+        return RestIndividual(actions = (0 until numRestAction).map { action1.copy() as RestCallAction }.toMutableList(), dbInitialization = dbActions, sampleType = SampleType.RANDOM)
     }
 
 }

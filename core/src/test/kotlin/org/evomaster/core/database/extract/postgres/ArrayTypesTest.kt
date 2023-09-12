@@ -5,10 +5,13 @@ import org.evomaster.client.java.controller.db.SqlScriptRunner
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.*
+import org.evomaster.core.search.gene.numeric.IntegerGene
 import org.evomaster.core.search.gene.sql.SqlMultidimensionalArrayGene
-import org.evomaster.core.search.gene.sql.SqlNullable
+import org.evomaster.core.search.gene.optional.NullableGene
+import org.evomaster.core.search.gene.string.StringGene
+import org.evomaster.core.search.service.Randomness
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 /**
@@ -17,6 +20,14 @@ import org.junit.jupiter.api.Test
 class ArrayTypesTest : ExtractTestBasePostgres() {
 
     override fun getSchemaLocation() = "/sql_schema/postgres_array_types.sql"
+
+    private val rand = Randomness()
+
+    @BeforeEach
+    fun initRand() {
+        rand.updateSeed(42)
+    }
+
 
     @Test
     fun testExtractionOfArrayTypes() {
@@ -88,7 +99,8 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
             )
         )
 
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
+
 
         assertEquals(7, genes.size)
         assertTrue(genes[0] is IntegerGene)
@@ -99,26 +111,34 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
         assertTrue(genes[5] is SqlMultidimensionalArrayGene<*>)
         assertTrue(genes[6] is SqlMultidimensionalArrayGene<*>)
 
+
         val arrayColumn = genes[1] as SqlMultidimensionalArrayGene<IntegerGene>
         assertEquals(1, arrayColumn.numberOfDimensions)
+        arrayColumn.doInitialize(rand)
+        do {
+            arrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (arrayColumn.getDimensionSize(0) != 0)
         assertEquals("\"{}\"", arrayColumn.getValueAsPrintableString())
 
         val matrixColumn = genes[2] as SqlMultidimensionalArrayGene<IntegerGene>
         assertEquals(2, matrixColumn.numberOfDimensions)
-        assertEquals("\"{}\"", matrixColumn.getValueAsPrintableString())
 
         val spaceColumn = genes[3] as SqlMultidimensionalArrayGene<IntegerGene>
         assertEquals(3, spaceColumn.numberOfDimensions)
-        assertEquals("\"{}\"", spaceColumn.getValueAsPrintableString())
 
-        arrayColumn.replaceElements(dimensionSizes = listOf(3))
-        (arrayColumn.getElement(listOf(0)) as IntegerGene).value = 1
-        (arrayColumn.getElement(listOf(1)) as IntegerGene).value = 2
-        (arrayColumn.getElement(listOf(2)) as IntegerGene).value = 3
+        do {
+            arrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (arrayColumn.getDimensionSize(0) != 3)
+        assertEquals(3, arrayColumn.getDimensionSize(0))
 
-        assertEquals("\"{1,2,3}\"", arrayColumn.getValueAsPrintableString())
+        arrayColumn.getElement(listOf(0)).value = 1
+        arrayColumn.getElement(listOf(1)).value = 2
+        arrayColumn.getElement(listOf(2)).value = 3
+
+        assertEquals("\"{1, 2, 3}\"", arrayColumn.getValueAsPrintableString())
 
     }
+
 
     @Test
     fun testInsertValuesOfArrayGenes() {
@@ -139,6 +159,7 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
             )
         )
 
+        actions.forEach{ it.seeTopGenes().forEach { it.doInitialize(rand) }}
         val dbCommandDto = DbActionTransformer.transform(actions)
         SqlScriptRunner.execInsert(connection, dbCommandDto.insertions)
 
@@ -156,19 +177,21 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
                 "nullableArrayColumn"
             )
         )
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
 
         val nullableArrayColumn = genes[0] as SqlMultidimensionalArrayGene<*>
         assertEquals(1, nullableArrayColumn.numberOfDimensions)
-        assertTrue(nullableArrayColumn.template is SqlNullable)
-        assertEquals("\"{}\"", nullableArrayColumn.getValueAsPrintableString())
+        assertTrue(nullableArrayColumn.template is NullableGene)
 
-        nullableArrayColumn.replaceElements(dimensionSizes = listOf(1))
+        nullableArrayColumn.doInitialize(rand)
+        do {
+            nullableArrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (nullableArrayColumn.getDimensionSize(0) != 1)
 
-        val sqlNullable = nullableArrayColumn.getElement(listOf(0)) as SqlNullable
-        sqlNullable.isPresent = false
+        val sqlNullableGene = nullableArrayColumn.getElement(listOf(0)) as NullableGene
+        sqlNullableGene.isActive = false
 
         assertEquals("\"{NULL}\"", nullableArrayColumn.getValueAsPrintableString())
 
@@ -190,16 +213,18 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
                 "stringArrayColumn"
             )
         )
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
 
         val stringArrayColumn = genes[0] as SqlMultidimensionalArrayGene<*>
         assertEquals(1, stringArrayColumn.numberOfDimensions)
         assertTrue(stringArrayColumn.template is StringGene)
-        assertEquals("\"{}\"", stringArrayColumn.getValueAsPrintableString())
 
-        stringArrayColumn.replaceElements(dimensionSizes = listOf(1))
+        stringArrayColumn.doInitialize(rand)
+        do {
+            stringArrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (stringArrayColumn.getDimensionSize(0) != 1)
 
         val stringGene = stringArrayColumn.getElement(listOf(0)) as StringGene
         stringGene.value = "Hello World"
@@ -218,21 +243,23 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction(
-                "StringArrayTable",
-                setOf(
-                        "stringArrayColumn"
-                )
+            "StringArrayTable",
+            setOf(
+                "stringArrayColumn"
+            )
         )
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
 
         val stringArrayColumn = genes[0] as SqlMultidimensionalArrayGene<*>
         assertEquals(1, stringArrayColumn.numberOfDimensions)
         assertTrue(stringArrayColumn.template is StringGene)
-        assertEquals("\"{}\"", stringArrayColumn.getValueAsPrintableString())
 
-        stringArrayColumn.replaceElements(dimensionSizes = listOf(1))
+        stringArrayColumn.doInitialize(rand)
+        do {
+            stringArrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (stringArrayColumn.getDimensionSize(0) != 1)
 
         val stringGene = stringArrayColumn.getElement(listOf(0)) as StringGene
         stringGene.value = "Hello\"World"
@@ -252,21 +279,23 @@ class ArrayTypesTest : ExtractTestBasePostgres() {
 
         val builder = SqlInsertBuilder(schema)
         val actions = builder.createSqlInsertionAction(
-                "StringArrayTable",
-                setOf(
-                        "stringArrayColumn"
-                )
+            "StringArrayTable",
+            setOf(
+                "stringArrayColumn"
+            )
         )
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(1, genes.size)
 
         val stringArrayColumn = genes[0] as SqlMultidimensionalArrayGene<*>
         assertEquals(1, stringArrayColumn.numberOfDimensions)
         assertTrue(stringArrayColumn.template is StringGene)
-        assertEquals("\"{}\"", stringArrayColumn.getValueAsPrintableString())
 
-        stringArrayColumn.replaceElements(dimensionSizes = listOf(1))
+        stringArrayColumn.doInitialize(rand)
+        do {
+            stringArrayColumn.randomize(rand, tryToForceNewValue = false)
+        } while (stringArrayColumn.getDimensionSize(0) != 1)
 
         val stringGene = stringArrayColumn.getElement(listOf(0)) as StringGene
         stringGene.value = "Hello'World"

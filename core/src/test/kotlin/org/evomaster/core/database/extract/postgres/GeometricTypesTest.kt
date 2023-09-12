@@ -5,7 +5,7 @@ import org.evomaster.client.java.controller.db.SqlScriptRunner
 import org.evomaster.client.java.controller.internal.db.SchemaExtractor
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.search.gene.ArrayGene
+import org.evomaster.core.search.gene.collection.ArrayGene
 import org.evomaster.core.search.gene.sql.geometric.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -36,7 +36,7 @@ class GeometricTypesTest : ExtractTestBasePostgres() {
             )
         )
 
-        val genes = actions[0].seeGenes()
+        val genes = actions[0].seeTopGenes()
 
         assertEquals(7, genes.size)
         assertTrue(genes[0] is SqlPointGene)
@@ -48,20 +48,20 @@ class GeometricTypesTest : ExtractTestBasePostgres() {
         assertTrue(genes[6] is SqlCircleGene)
 
         val lineGene = genes[1] as SqlLineGene
-        val p = lineGene.innerGene()[0] as SqlPointGene
-        val q = lineGene.innerGene()[1] as SqlPointGene
+        val p = lineGene.getViewOfChildren()[0] as SqlPointGene
+        val q = lineGene.getViewOfChildren()[1] as SqlPointGene
         p.x.value = 0.0f
         p.y.value = 0.0f
         q.x.value = 1.0f
         q.y.value = 1.0f
 
         val pathGene = genes[4] as SqlPathGene
-        (pathGene.getChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point1"))
-        (pathGene.getChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point2"))
+        (pathGene.getViewOfChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point1"))
+        (pathGene.getViewOfChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point2"))
 
         val polygonGene = genes[5] as SqlPolygonGene
-        (polygonGene.getChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point1"))
-        (polygonGene.getChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point2"))
+        (polygonGene.getViewOfChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point1"))
+        (polygonGene.getViewOfChildren().first() as ArrayGene<SqlPointGene>).addElement(SqlPointGene("point2"))
 
         val circleGene = genes[6] as SqlCircleGene
 

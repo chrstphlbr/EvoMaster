@@ -1,8 +1,8 @@
 package org.evomaster.core.database
 
 import org.evomaster.core.search.gene.Gene
-import org.evomaster.core.search.gene.NumberGene
-import org.evomaster.core.search.gene.sql.SqlNullable
+import org.evomaster.core.search.gene.numeric.NumberGene
+import org.evomaster.core.search.gene.optional.NullableGene
 import org.evomaster.dbconstraint.*
 import java.util.regex.Pattern
 
@@ -57,16 +57,16 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         }
 
         // get the gene with the corresponding column name
-        val gene = dbAction.seeGenes().firstOrNull { it.name == constraint.columnName }
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == constraint.columnName }
 
 
         val isPresent = when (gene) {
             // if no gene is found, consider the value to be null
             null -> false
-            else -> if (gene is SqlNullable) {
+            else -> if (gene is NullableGene) {
                 // if the gene is a nullable gen, the value
                 // could be null if isPresent==true
-                gene.isPresent
+                gene.isActive
             } else {
                 // if the gene is not a nullable gene, then
                 // its value is not null
@@ -92,7 +92,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         // will be NULL as default value. Therefore, the range is not satisfied
         // However, it is possible to specify DEFAULT values in the
         // TODO: Handle DEFAULT column values different than NULL
-        val gene = dbAction.seeGenes().firstOrNull { it.name == constraint.columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == constraint.columnName } ?: return false
         val numberGene = gene.flatView().filterIsInstance<NumberGene<*>>().first()
 
         return constraint.lowerBound <= numberGene.toLong()
@@ -113,7 +113,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         // will be NULL as default value. Therefore, the range is not satisfied
         // However, it is possible to specify DEFAULT values in the
         // TODO: Handle DEFAULT column values different than NULL
-        val gene = dbAction.seeGenes().firstOrNull { it.name == constraint.columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == constraint.columnName } ?: return false
         val numberGene = gene.flatView().filterIsInstance<NumberGene<*>>().first()
 
         return numberGene.toLong() <= constraint.upperBound
@@ -135,7 +135,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         // will be NULL as default value. Therefore, the range is not satisfied
         // However, it is possible to specify DEFAULT values in the
         // TODO: Handle DEFAULT column values different than NULL
-        val gene = dbAction.seeGenes().firstOrNull { it.name == constraint.columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == constraint.columnName } ?: return false
         val numberGene = gene.flatView().filterIsInstance<NumberGene<*>>().first()
 
         return constraint.minValue <= numberGene.toLong()
@@ -153,7 +153,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         if (dbAction.table.name != constraint.tableName) {
             return true
         }
-        val gene = dbAction.seeGenes().firstOrNull { it.name == constraint.columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == constraint.columnName } ?: return false
         val rawString = gene.getValueAsRawString()
 
         return constraint.valuesAsStrings.contains(rawString)
@@ -174,7 +174,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
                 // if the action is not related to this action, ignore the action
                 continue
             }
-            val tuple = getTuple(constraint.uniqueColumnNames, previousAction.seeGenes())
+            val tuple = getTuple(constraint.uniqueColumnNames, previousAction.seeTopGenes())
             if (tuple in tuples) {
                 // if the tuple was already observed, return false
                 return false
@@ -231,7 +231,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
         }
 
 
-        val gene = dbAction.seeGenes().firstOrNull { it.name == columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == columnName } ?: return false
         val instance = gene.getValueAsRawString()
 
         val javaRegexPattern = when (databaseType) {
@@ -257,7 +257,7 @@ class TableConstraintEvaluator(val previousActions: List<DbAction> = listOf())
             return true
         }
 
-        val gene = dbAction.seeGenes().firstOrNull { it.name == columnName } ?: return false
+        val gene = dbAction.seeTopGenes().firstOrNull { it.name == columnName } ?: return false
         val instance = gene.getValueAsRawString()
 
         val javaRegexPattern = when (databaseType) {

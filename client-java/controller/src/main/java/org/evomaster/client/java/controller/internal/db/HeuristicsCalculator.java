@@ -14,6 +14,8 @@ import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
 import org.evomaster.client.java.utils.SimpleLogger;
 
 import java.sql.Timestamp;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
@@ -24,10 +26,12 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Function;
 
+import static java.sql.Timestamp.valueOf;
 import static org.evomaster.client.java.controller.internal.db.ParserUtils.getWhere;
 
 public class HeuristicsCalculator {
 
+    private static final String QUOTE = "'";
 
     private final SqlNameContext context;
 
@@ -56,7 +60,7 @@ public class HeuristicsCalculator {
 
 
         SqlNameContext context = new SqlNameContext(stmt);
-        if(schema != null){
+        if (schema != null) {
             context.setSchema(schema);
         }
         HeuristicsCalculator calculator = new HeuristicsCalculator(context);
@@ -79,7 +83,7 @@ public class HeuristicsCalculator {
     /**
      * Compute a "branch" distance heuristics.
      *
-     * @param exp the WHERE clause which we want to resolve as true
+     * @param exp  the WHERE clause which we want to resolve as true
      * @param data current data raw in the database, based on the columns/tables involved in the WHERE
      * @return a branch distance, where 0 means that the data would make the WHERE resolves to true
      */
@@ -103,44 +107,45 @@ public class HeuristicsCalculator {
 
 
         //------ net.sf.jsqlparser.expression.operators.relational.*  ---------
-        if(exp instanceof Between){
-            return computeBetween((Between)exp, data);
+        if (exp instanceof Between) {
+            return computeBetween((Between) exp, data);
         }
         if (exp instanceof ComparisonOperator) {
-             //   this deals with 6 subclasses:
+            //   this deals with 6 subclasses:
             return computeComparisonOperator((ComparisonOperator) exp, data);
         }
-        if(exp instanceof ExistsExpression){
-            //TODO
-        }
-        if(exp instanceof ExpressionList){
-            //TODO
-        }
+
         if (exp instanceof InExpression) {
             return computeInExpression((InExpression) exp, data);
         }
         if (exp instanceof IsNullExpression) {
             return computeIsNull((IsNullExpression) exp, data);
         }
-        if(exp instanceof JsonOperator){
-            //TODO
-        }
-        if(exp instanceof LikeExpression){
-            //TODO
-        }
-        if(exp instanceof Matches){
-            //TODO
-        }
-        if(exp instanceof MultiExpressionList){
-            //TODO
-        }
-        if(exp instanceof NamedExpressionList){
-            //TODO
-        }
-        if(exp instanceof RegExpMatchOperator){
-            //TODO
-        }
 
+        if (exp instanceof ExistsExpression) {
+            //TODO
+        }
+        if (exp instanceof ExpressionList) {
+            //TODO
+        }
+        if (exp instanceof JsonOperator) {
+            //TODO
+        }
+        if (exp instanceof LikeExpression) {
+            //TODO
+        }
+        if (exp instanceof Matches) {
+            //TODO
+        }
+        if (exp instanceof MultiExpressionList) {
+            //TODO
+        }
+        if (exp instanceof NamedExpressionList) {
+            //TODO
+        }
+        if (exp instanceof RegExpMatchOperator) {
+            //TODO
+        }
         return cannotHandle(exp);
     }
 
@@ -222,11 +227,9 @@ public class HeuristicsCalculator {
 
     private double cannotHandle(Expression exp) {
         SimpleLogger.uniqueWarn("WARNING, cannot handle SQL expression type '" + exp.getClass().getSimpleName() +
-                "' with value: " + exp.toString());
+                "' with value: " + exp);
         return Double.MAX_VALUE;
     }
-
-
 
 
     private double computeAnd(AndExpression exp, DataRow data) {
@@ -255,27 +258,27 @@ public class HeuristicsCalculator {
         return Math.min(a, b);
     }
 
-    protected Instant getAsInstant(Object obj){
+    protected Instant getAsInstant(Object obj) {
 
-        if(obj == null){
+        if (obj == null) {
             /*
                 TODO this shouldn't really happen if we have full SQL support, like sub-selects
              */
             return null;
         }
 
-        if(obj instanceof Timestamp){
+        if (obj instanceof Timestamp) {
             Timestamp timestamp = (Timestamp) obj;
             return timestamp.toInstant();
         }
 
-        if(obj instanceof String){
+        if (obj instanceof String) {
 
 
             List<Function<String, Instant>> parsers = Arrays.asList(
-                    s ->  ZonedDateTime.parse(s).toInstant(),
-                    s -> Instant.parse(s),
-                    s -> OffsetDateTime.parse( s , DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSX")).toInstant(),
+                    s -> ZonedDateTime.parse(s).toInstant(),
+                    Instant::parse,
+                    s -> OffsetDateTime.parse(s, DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSX")).toInstant(),
                     s -> {
                         /*
                            maybe it is in some weird format like 28-Feb-17...
@@ -292,6 +295,13 @@ public class HeuristicsCalculator {
 
                         return LocalDate.parse(obj.toString(), df)
                                 .atStartOfDay().toInstant(ZoneOffset.UTC);
+                    },
+                    s -> {
+                        try {
+                            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSS").parse(s).toInstant();
+                        } catch (ParseException ex) {
+                            throw new DateTimeParseException("Cannot parse to yyyy-MM-dd HH:mm:ss.SSSS", s, ex.getErrorOffset(), ex);
+                        }
                     }
             );
 
@@ -303,10 +313,11 @@ public class HeuristicsCalculator {
                 So, here we try different date parsers, hoping at least one will work...
              */
 
-            for(Function<String, Instant> p : parsers){
-                try{
+            for (Function<String, Instant> p : parsers) {
+                try {
                     return p.apply(s);
                 } catch (DateTimeParseException t) {
+                    // Do nothing
                 }
             }
 
@@ -323,12 +334,12 @@ public class HeuristicsCalculator {
         Object left = getValue(exp.getLeftExpression(), data);
         Object right = getValue(exp.getRightExpression(), data);
 
-        if(left instanceof Timestamp || right instanceof Timestamp){
+        if (left instanceof Timestamp || right instanceof Timestamp) {
 
             Instant a = getAsInstant(left);
             Instant b = getAsInstant(right);
 
-            if(a==null || b==null){
+            if (a == null || b == null) {
                 return cannotHandle(exp);
             }
 
@@ -358,11 +369,11 @@ public class HeuristicsCalculator {
     }
 
     private double computeComparison(Instant a, Instant b, ComparisonOperator exp) {
-        if(a==null || b==null){
+        if (a == null || b == null) {
             return Double.MAX_VALUE;
         }
 
-        double dif = - Duration.between(a,b).toMillis();
+        double dif = -Duration.between(a, b).toMillis();
         return computerComparison(dif, exp);
     }
 
@@ -385,18 +396,18 @@ public class HeuristicsCalculator {
         return (exp instanceof EqualsTo) || (exp instanceof NotEqualsTo);
     }
 
-    private double computeNullComparison(Object x, Object y, ComparisonOperator exp) {
+    private double computeNullComparison(Object left, Object right, ComparisonOperator exp) {
 
-        assert x == null || y == null;
+        assert left == null || right == null;
 
         if (!checkEqualOrNotOperator(exp)) {
             return cannotHandle(exp);
         }
 
-        if (exp instanceof EqualsTo && x == y) {
+        if (exp instanceof EqualsTo && left == right) {
             return 0d;
         }
-        if (exp instanceof NotEqualsTo && x != y) {
+        if (exp instanceof NotEqualsTo && left != right) {
             return 0d;
         }
         return Double.MAX_VALUE;
@@ -412,7 +423,7 @@ public class HeuristicsCalculator {
         } else if (exp instanceof GreaterThan) {
             return dif > 0 ? 0d : 1d - dif;
         } else if (exp instanceof MinorThanEquals) {
-            return dif <=0  ? 0d : dif;
+            return dif <= 0 ? 0d : dif;
         } else if (exp instanceof MinorThan) {
             return dif < 0 ? 0d : 1d + dif;
         } else if (exp instanceof NotEqualsTo) {
@@ -462,7 +473,7 @@ public class HeuristicsCalculator {
             return getValue(((Parenthesis) exp).getExpression(), data);
         } else if (exp instanceof LongValue) {
             return ((LongValue) exp).getValue();
-        } else if (exp instanceof DoubleValue){
+        } else if (exp instanceof DoubleValue) {
             return ((DoubleValue) exp).getValue();
         } else if (exp instanceof StringValue) {
             return ((StringValue) exp).getNotExcapedValue();
@@ -487,9 +498,36 @@ public class HeuristicsCalculator {
                     return null;
                 }
             }
+        } else if (exp instanceof CastExpression) {
+            CastExpression castExpression = (CastExpression) exp;
+            return getValue(castExpression.getLeftExpression(), data);
+        } else if (exp instanceof DateTimeLiteralExpression) {
+            DateTimeLiteralExpression dateTimeLiteralExpression = (DateTimeLiteralExpression) exp;
+            String str = dateTimeLiteralExpression.getValue();
+            assert (str.length() > 2 && startsAndEndsWithQuotes(str));
+            str = removeFirstAndLastCharacter(str);
+            return str;
         } else {
             cannotHandle(exp);
             return null;
         }
+    }
+
+    /**
+     * Given a string "Hello World" returns "ello Worl".
+     * Requires the string's length to be greater than 2
+     *
+     * @param str
+     * @return
+     */
+    private String removeFirstAndLastCharacter(String str) {
+        if (str.length() < 2) {
+            throw new IllegalArgumentException("Cannot remove quotes from " + str);
+        }
+        return str.substring(1, str.length() - 1);
+    }
+
+    private boolean startsAndEndsWithQuotes(String str) {
+        return str.startsWith(QUOTE) && str.endsWith(QUOTE);
     }
 }

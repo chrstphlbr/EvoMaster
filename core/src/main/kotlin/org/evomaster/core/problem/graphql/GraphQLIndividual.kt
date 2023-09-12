@@ -2,81 +2,61 @@ package org.evomaster.core.problem.graphql
 
 import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionUtils
-import org.evomaster.core.problem.api.service.ApiWsIndividual
+import org.evomaster.core.problem.api.ApiWsIndividual
+import org.evomaster.core.problem.enterprise.EnterpriseActionGroup
+import org.evomaster.core.problem.externalservice.ApiExternalServiceAction
 import org.evomaster.core.problem.rest.SampleType
-import org.evomaster.core.search.Action
-import org.evomaster.core.search.ActionFilter
-import org.evomaster.core.search.Individual
+import org.evomaster.core.search.*
 import org.evomaster.core.search.gene.Gene
-import org.evomaster.core.search.tracer.TraceableElementCopyFilter
 
 class GraphQLIndividual(
-        private val actions: MutableList<GraphQLAction>,
         val sampleType: SampleType,
-        dbInitialization: MutableList<DbAction> = mutableListOf()
-) : ApiWsIndividual(dbInitialization= dbInitialization, children = dbInitialization.plus(actions)) {
+        allActions : MutableList<out ActionComponent>,
+        mainSize : Int = allActions.size,
+        dbSize: Int = 0,
+        groups : GroupsOfChildren<StructuralElement> = getEnterpriseTopGroups(allActions,mainSize,dbSize)
+) : ApiWsIndividual(
+    children = allActions,
+    childTypeVerifier = {
+        EnterpriseActionGroup::class.java.isAssignableFrom(it)
+                || DbAction::class.java.isAssignableFrom(it)
+    },
+    groups = groups
+) {
+
 
     override fun copyContent(): Individual {
 
         return GraphQLIndividual(
-                actions.map { it.copyContent() as GraphQLAction}.toMutableList(),
                 sampleType,
-                seeInitializingActions().map { it.copyContent() as DbAction } as MutableList<DbAction>
+                children.map { it.copy() }.toMutableList() as MutableList<ActionComponent>,
+                mainSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.MAIN),
+                dbSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.INITIALIZATION_SQL)
         )
 
     }
 
-    override fun getChildren(): List<Action> = seeInitializingActions().plus(actions)
-
     override fun seeGenes(filter: GeneFilter): List<out Gene> {
         return when (filter) {
-            GeneFilter.ALL -> seeInitializingActions().flatMap(DbAction::seeGenes).plus(seeActions().flatMap(Action::seeGenes))
-            GeneFilter.NO_SQL -> seeActions().flatMap(Action::seeGenes)
-            GeneFilter.ONLY_SQL -> seeInitializingActions().flatMap(DbAction::seeGenes)
+            GeneFilter.ALL -> seeAllActions().flatMap(Action::seeTopGenes)
+            GeneFilter.NO_SQL -> seeActions(ActionFilter.NO_SQL).flatMap(Action::seeTopGenes)
+            GeneFilter.ONLY_SQL -> seeDbActions().flatMap(DbAction::seeTopGenes)
+            GeneFilter.ONLY_EXTERNAL_SERVICE -> seeExternalServiceActions().flatMap(ApiExternalServiceAction::seeTopGenes)
         }
     }
 
-    override fun size(): Int {
-        return seeActions().size
+
+    fun addGQLAction(relativePosition: Int = -1, action: GraphQLAction){
+        addMainActionInEmptyEnterpriseGroup(relativePosition, action)
     }
 
-    override fun seeActions(): List<GraphQLAction> {
-        return actions
-    }
-
-    override fun seeActions(filter: ActionFilter): List<out Action> {
-        return when(filter){
-            ActionFilter.ALL -> seeInitializingActions().plus(actions)
-            ActionFilter.ONLY_SQL, ActionFilter.INIT -> seeInitializingActions()
-            ActionFilter.NO_INIT, ActionFilter.NO_SQL -> actions
-        }
-    }
-
-    override fun verifyInitializationActions(): Boolean {
-        return DbActionUtils.verifyActions(seeInitializingActions())
+    fun removeGQLActionAt(relativePosition: Int){
+        //FIXME isn't this wrong by ignoring initializing actions?
+        killChildByIndex(relativePosition)
     }
 
 
-    override fun copy(copyFilter: TraceableElementCopyFilter): GraphQLIndividual {
-        val copy = copy() as GraphQLIndividual
-        when(copyFilter){
-            TraceableElementCopyFilter.NONE-> {}
-            TraceableElementCopyFilter.WITH_TRACK, TraceableElementCopyFilter.DEEP_TRACK  ->{
-                copy.wrapWithTracking(null, tracking!!.copy())
-            }else -> throw IllegalStateException("${copyFilter.name} is not implemented!")
-        }
-        return copy
+    override fun seeMainExecutableActions() : List<GraphQLAction>{
+        return super.seeMainExecutableActions() as List<GraphQLAction>
     }
-
-    fun addGQLAction(position: Int = -1, action: GraphQLAction){
-        if (position == -1) actions.add(action)
-        else{
-            actions.add(position, action)
-        }
-    }
-
-    fun removeGQLActionAt(position: Int){
-        actions.removeAt(position)
-    }
-
 }

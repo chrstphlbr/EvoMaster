@@ -3,17 +3,25 @@ package org.evomaster.core.problem.rest.service
 import com.google.inject.Inject
 import io.swagger.v3.oas.models.OpenAPI
 import org.evomaster.client.java.controller.api.dto.SutInfoDto
+import org.evomaster.client.java.controller.api.dto.problem.ExternalServiceDto
+import org.evomaster.client.java.instrumentation.shared.TaintInputName
 import org.evomaster.core.EMConfig
 import org.evomaster.core.output.service.PartialOracles
-import org.evomaster.core.problem.external.service.ExternalServiceInfo
-import org.evomaster.core.problem.external.service.ExternalServiceHandler
+import org.evomaster.core.problem.externalservice.ExternalService
+import org.evomaster.core.problem.externalservice.httpws.HttpExternalServiceInfo
+import org.evomaster.core.problem.externalservice.httpws.service.HttpWsExternalServiceHandler
 import org.evomaster.core.problem.httpws.service.HttpWsSampler
 import org.evomaster.core.problem.rest.*
 import org.evomaster.core.problem.rest.RestActionBuilderV3.buildActionBasedOnUrl
+import org.evomaster.core.problem.rest.param.HeaderParam
+import org.evomaster.core.problem.rest.param.QueryParam
 import org.evomaster.core.problem.rest.seeding.Parser
 import org.evomaster.core.problem.rest.seeding.postman.PostmanParser
 import org.evomaster.core.remote.SutProblemException
-import org.evomaster.core.remote.service.RemoteController
+import org.evomaster.core.search.Action
+import org.evomaster.core.search.gene.optional.CustomMutationRateGene
+import org.evomaster.core.search.gene.optional.OptionalGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.evomaster.core.search.tracer.Traceable
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -21,12 +29,10 @@ import javax.annotation.PostConstruct
 
 
 abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
+
     companion object {
         private val log: Logger = LoggerFactory.getLogger(AbstractRestSampler::class.java)
     }
-
-    @Inject(optional = true)
-    protected lateinit var rc: RemoteController
 
     @Inject
     protected lateinit var configuration: EMConfig
@@ -43,7 +49,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
 
     // TODO: This will moved under ApiWsSampler once RPC and GraphQL support is completed
     @Inject
-    protected lateinit var externalServiceHandler: ExternalServiceHandler
+    protected lateinit var externalServiceHandler: HttpWsExternalServiceHandler
 
     @PostConstruct
     open fun initialize() {
@@ -85,12 +91,24 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
 
         actionCluster.clear()
         val skip = getEndpointsToSkip(swagger, infoDto)
-        RestActionBuilderV3.addActionsFromSwagger(swagger, actionCluster, skip)
+        RestActionBuilderV3.addActionsFromSwagger(swagger, actionCluster, skip, enableConstraintHandling = config.enableSchemaConstraintHandling)
+
+        if(config.extraQueryParam){
+            addExtraQueryParam(actionCluster)
+        }
+        if(config.extraHeader){
+            addExtraHeader(actionCluster)
+        }
 
         setupAuthentication(infoDto)
         initSqlInfo(infoDto)
 
         initExternalServiceInfo(infoDto)
+
+        // TODO: temp
+        if (problem.servicesToNotMock != null) {
+            registerExternalServicesToSkip(problem.servicesToNotMock)
+        }
 
         initAdHocInitialIndividuals()
 
@@ -101,10 +119,49 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
         /*
             TODO this would had been better handled with optional injection, but Guice seems pretty buggy :(
          */
-        partialOracles.setupForRest(swagger)
+        partialOracles.setupForRest(swagger, config)
 
         log.debug("Done initializing {}", AbstractRestSampler::class.simpleName)
     }
+
+    private fun addExtraQueryParam(actionCluster: Map<String, Action>){
+
+        val key = TaintInputName.EXTRA_PARAM_TAINT
+
+        actionCluster.values.forEach {
+            (it as RestCallAction).addParam(QueryParam(key,
+                CustomMutationRateGene(key,
+                    OptionalGene(
+                        key,
+                        CustomMutationRateGene(key, StringGene(key, "42"), 0.0),
+                        searchPercentageActive = config.searchPercentageExtraHandling
+                    ),
+                    probability = 1.0,
+                    searchPercentageActive = config.searchPercentageExtraHandling
+                )
+            ))
+        }
+    }
+
+    private fun addExtraHeader(actionCluster: Map<String, Action>){
+
+        val key = TaintInputName.EXTRA_HEADER_TAINT
+
+        actionCluster.values.forEach {
+            (it as RestCallAction).addParam(HeaderParam(key,
+                CustomMutationRateGene(key,
+                    OptionalGene(
+                        key,
+                        CustomMutationRateGene(key, StringGene(key, "42"), 0.0),
+                        searchPercentageActive = config.searchPercentageExtraHandling
+                    ),
+                    probability = 1.0,
+                    searchPercentageActive = config.searchPercentageExtraHandling
+                )
+            ))
+        }
+    }
+
 
     /**
      * create AdHocInitialIndividuals
@@ -116,7 +173,10 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
         if (config.seedTestCases) {
             val parser = getParser()
             val seededTestCases = parser.parseTestCases(config.seedTestCasesPath)
-            adHocInitialIndividuals.addAll(seededTestCases.map { createIndividual(it) })
+            adHocInitialIndividuals.addAll(seededTestCases.map {
+                it.forEach { a -> a.doInitialize() }
+                createIndividual(it)
+            })
         }
 
     }
@@ -124,6 +184,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
 
     override fun getPreDefinedIndividuals() : List<RestIndividual>{
         val addCallAction = addCallToSwagger() ?: return listOf()
+        addCallAction.doInitialize()
         return listOf(createIndividual(mutableListOf(addCallAction)))
     }
 
@@ -211,7 +272,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
         }
 
         actionCluster.clear()
-        RestActionBuilderV3.addActionsFromSwagger(swagger, actionCluster, listOf())
+        RestActionBuilderV3.addActionsFromSwagger(swagger, actionCluster, listOf(), enableConstraintHandling = config.enableSchemaConstraintHandling)
 
         initAdHocInitialIndividuals()
 
@@ -220,7 +281,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
         /*
             TODO this would had been better handled with optional injection, but Guice seems pretty buggy :(
          */
-        partialOracles.setupForRest(swagger)
+        partialOracles.setupForRest(swagger, config)
 
         log.debug("Done initializing {}", AbstractRestSampler::class.simpleName)
     }
@@ -230,7 +291,7 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
     }
 
     override fun hasSpecialInit(): Boolean {
-        return !adHocInitialIndividuals.isEmpty() && config.probOfSmartSampling > 0
+        return adHocInitialIndividuals.isNotEmpty() && config.isEnabledSmartSampling()
     }
 
     /**
@@ -246,11 +307,18 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
     fun getNotExecutedAdHocInitialIndividuals() = adHocInitialIndividuals.toList()
 
     /**
-     * @return a created individual with specified actions, i.e., [restCalls]
+     * @return a created individual with specified actions, i.e., [restCalls].
+     * All actions must have been already initialized
      */
     open fun createIndividual(restCalls: MutableList<RestCallAction>): RestIndividual {
-        return RestIndividual(restCalls, SampleType.SMART, mutableListOf()//, usedObjects.copy()
+        if(restCalls.any { !it.isInitialized() }){
+            throw IllegalArgumentException("Action is not initialized")
+        }
+        val ind =  RestIndividual(restCalls, SampleType.SMART, mutableListOf()//, usedObjects.copy()
                 ,trackOperator = if (config.trackingEnabled()) this else null, index = if (config.trackingEnabled()) time.evaluatedIndividuals else Traceable.DEFAULT_INDEX)
+        ind.doInitializeLocalId()
+        org.evomaster.core.Lazy.assert { ind.isInitialized() }
+        return ind
     }
 
     private fun getParser(): Parser {
@@ -265,16 +333,26 @@ abstract class AbstractRestSampler : HttpWsSampler<RestIndividual>() {
     private fun initExternalServiceInfo(info: SutInfoDto) {
         if (info.bootTimeInfoDto?.externalServicesDto != null) {
             info.bootTimeInfoDto.externalServicesDto.forEach {
-                externalServiceHandler.addExternalService(ExternalServiceInfo(
+                externalServiceHandler.addExternalService(
+                    HttpExternalServiceInfo(
                         it.protocol,
                         it.remoteHostname,
                         it.remotePort
-                ))
+                )
+                )
             }
         }
     }
 
-    fun getExternalServicesInfo(): ExternalServiceHandler {
-        return externalServiceHandler
+    private fun registerExternalServicesToSkip(services: List<ExternalServiceDto>) {
+        services.forEach {
+            externalServiceHandler.registerExternalServiceToSkip(
+                ExternalService(
+                it.hostname,
+                it.port
+            )
+            )
+        }
     }
+
 }

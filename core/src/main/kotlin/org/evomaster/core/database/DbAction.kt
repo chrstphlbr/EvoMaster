@@ -4,10 +4,9 @@ import org.evomaster.core.database.schema.Column
 import org.evomaster.core.database.schema.Table
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.gene.Gene
-import org.evomaster.core.search.gene.ImmutableDataHolderGene
-import org.evomaster.core.search.gene.StringGene
+import org.evomaster.core.search.gene.placeholder.ImmutableDataHolderGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.evomaster.core.search.gene.sql.SqlPrimaryKeyGene
-import org.evomaster.core.search.service.Randomness
 
 /**
  *  An action executed on the database.
@@ -59,7 +58,7 @@ class DbAction(
     }
 
 
-    override fun getChildren(): List<Gene> = genes
+
 
     private fun handleVarBinary(column: Column): Gene {
         /*
@@ -87,7 +86,7 @@ class DbAction(
         return "SQL_Insert_${table.name}_${selectedColumns.map { it.name }.sorted().joinToString("_")}"
     }
 
-    override fun seeGenes(): List<out Gene> {
+    override fun seeTopGenes(): List<out Gene> {
         return genes
     }
 
@@ -100,20 +99,11 @@ class DbAction(
     }
 
     override fun copyContent(): Action {
-        return DbAction(table, selectedColumns, id, genes.map(Gene::copyContent), representExistingData)
+        return DbAction(table, selectedColumns, id, genes.map(Gene::copy), representExistingData)
     }
 
     override fun shouldCountForFitnessEvaluations(): Boolean {
         return false
-    }
-
-    override fun randomize(randomness: Randomness, forceNewValue: Boolean, all: List<Action>) {
-        val allGenes = all.flatMap { it.seeGenes() }
-        seeGenes().asSequence()
-            .filter { it.isMutable() }
-            .forEach {
-                it.randomize(randomness, false, allGenes)
-            }
     }
 
     fun geInsertionId(): Long {

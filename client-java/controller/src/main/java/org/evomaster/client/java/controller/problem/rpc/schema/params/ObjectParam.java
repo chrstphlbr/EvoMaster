@@ -35,17 +35,31 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
         try {
             Object instance = clazz.newInstance();
             for (NamedTypedValue v: getValue()){
-                if (v.accessibleSchema == null || v.accessibleSchema.isAccessible){
+                boolean setWithSetter = false;
+
+                /*
+                    if setter exists, we should prioritize the usage of the setter
+                    for thrift, the setter contains additional info
+                 */
+                if(v.accessibleSchema != null && v.accessibleSchema.setterMethodName != null){
+                    Method m =  getSetter(clazz, v.accessibleSchema.setterMethodName, v.getType(), v.getType().getClazz(), 0);
+                            //clazz.getMethod(v.accessibleSchema.setterMethodName, v.getType().getClazz());
+                    try {
+                        m.invoke(instance, v.newInstance());
+                        setWithSetter = true;
+                    } catch (InvocationTargetException e) {
+                        SimpleLogger.uniqueWarn("fail to access the method:"+clazzName+" with error msg:"+e.getMessage());
+                    }
+                }
+
+                if (!setWithSetter){
                     Field f = clazz.getField(v.getName());
                     f.setAccessible(true);
                     Object vins = v.newInstance();
                     if (vins != null)
                         f.set(instance, vins);
-                } else if(v.accessibleSchema.setterMethodName != null){
-                    Method m =  getSetter(clazz, v.accessibleSchema.setterMethodName, v.getType(), v.getType().getClazz(), 0);
-                            //clazz.getMethod(v.accessibleSchema.setterMethodName, v.getType().getClazz());
-                    m.invoke(instance, v.newInstance());
                 }
+
             }
             return instance;
         } catch (InstantiationException e) {
@@ -56,8 +70,6 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
             throw new RuntimeException("fail to access the field:"+clazzName+" with error msg:"+e.getMessage());
         } catch (NoSuchMethodException e) {
             throw new RuntimeException("fail to access the method:"+clazzName+" with error msg:"+e.getMessage());
-        } catch (InvocationTargetException e) {
-            throw new RuntimeException("fail to invoke the setter method:"+clazzName+" with error msg:"+e.getMessage());
         }
     }
 
@@ -90,7 +102,7 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
 
         if (getValue() != null){
             dto.innerContent = getValue().stream().map(NamedTypedValue::getDto).collect(Collectors.toList());
-            dto.stringValue = NOT_NULL_MARK_OBJ_DATE;
+            dto.setNotNullValue();
         } else
             dto.innerContent = getType().getFields().stream().map(NamedTypedValue::getDto).collect(Collectors.toList());
         return dto;
@@ -98,6 +110,11 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
 
     @Override
     public void setValueBasedOnDto(ParamDto dto) {
+
+        if (dto.stringValue == null){
+            setValue(null);
+            return;
+        }
 
         if (dto.innerContent!=null && !dto.innerContent.isEmpty()){
             List<NamedTypedValue> fields = getType().getFields();
@@ -152,32 +169,36 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
     public void setValueBasedOnInstanceOrJson(Object json) throws JsonProcessingException {
 
         Object instance = json;
-
         if (json instanceof String)
             instance = parseValueWithJson((String) json);
 
-        if (isValidInstance(instance)){
-            setValueBasedOnInstance(instance);
-        } else {
-            List<NamedTypedValue> values = new ArrayList<>();
-            List<NamedTypedValue> fields = getType().getFields();
-
-            /*
-                in jackson, object would be extracted as a map
-             */
-            if (!(instance instanceof Map))
-                throw new RuntimeException("cannot parse the map param "+getName()+ " with the type" + instance.getClass().getName());
-
-            for (NamedTypedValue f: fields){
-                NamedTypedValue copy = f.copyStructureWithProperties();
-                Object fiv = ((Map)instance).get(f.getName());
-                copy.setValueBasedOnInstanceOrJson(fiv);
-
-                values.add(copy);
-            }
-
-            setValue(values);
+        if (instance == null){
+            setValue(null); return;
         }
+
+        if (isValidInstance(instance)){
+            setValueBasedOnValidInstance(instance);
+            return;
+        }
+
+        List<NamedTypedValue> values = new ArrayList<>();
+        List<NamedTypedValue> fields = getType().getFields();
+
+        /*
+            in jackson, object would be extracted as a map
+         */
+        if (!(instance instanceof Map))
+            throw new RuntimeException("cannot parse the map param "+getName()+ " with the type" + instance.getClass().getName());
+
+        for (NamedTypedValue f: fields){
+            NamedTypedValue copy = f.copyStructureWithProperties();
+            Object fiv = ((Map)instance).get(f.getName());
+            copy.setValueBasedOnInstanceOrJson(fiv);
+
+            values.add(copy);
+        }
+
+        setValue(values);
 
     }
 
@@ -196,10 +217,7 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
         // new obj
         CodeJavaGenerator.addCode(codes, CodeJavaGenerator.setInstanceObject(typeName, varName), indent+1);
         for (NamedTypedValue f : getValue()){
-            if (f.accessibleSchema == null || f.accessibleSchema.isAccessible){
-                String fName = varName+"."+f.getName();
-                codes.addAll(f.newInstanceWithJava(false, true, fName, indent+1));
-            }else{
+            if (f.accessibleSchema != null && f.accessibleSchema.setterMethodName != null){
                 String fName = varName;
                 boolean fdeclar = false;
                 if (f instanceof ObjectParam || f instanceof MapParam || f instanceof CollectionParam || f instanceof DateParam || f instanceof  BigDecimalParam || f instanceof BigIntegerParam){
@@ -211,6 +229,9 @@ public class ObjectParam extends NamedTypedValue<ObjectType, List<NamedTypedValu
                 if (f instanceof ObjectParam || f instanceof MapParam || f instanceof CollectionParam || f instanceof DateParam || f instanceof  BigDecimalParam || f instanceof BigIntegerParam){
                     CodeJavaGenerator.addCode(codes, CodeJavaGenerator.methodInvocation(varName, f.accessibleSchema.setterMethodName, fName)+CodeJavaGenerator.appendLast(),indent+1);
                 }
+            }else {
+                String fName = varName+"."+f.getName();
+                codes.addAll(f.newInstanceWithJava(false, true, fName, indent+1));
             }
         }
 
