@@ -177,7 +177,13 @@ class StringGene(
         val maxForRandomization = getSearchGlobalState()?.config?.maxLengthForStringsAtSamplingTime ?: 16
 
         val adjustedMin = minLength
-        val adjustedMax = min(maxLength, maxForRandomization)
+        val adjustedMax = min(maxLength, maxForRandomization).let { minMax ->
+            if (minMax < adjustedMin) {
+                adjustedMin
+            } else {
+                minMax
+            }
+        }
 
         if(adjustedMax == 0 && adjustedMin == adjustedMax){
             //only empty string is allowed
