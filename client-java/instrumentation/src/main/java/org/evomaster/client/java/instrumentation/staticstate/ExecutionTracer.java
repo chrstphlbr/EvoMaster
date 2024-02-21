@@ -33,6 +33,8 @@ public class ExecutionTracer {
      */
     private static boolean executingInitSql = false;
 
+    private static boolean executingInitMongo = false;
+
     /**
      * indicate whether now it is to execute action during the search
      */
@@ -185,6 +187,10 @@ public class ExecutionTracer {
 
     public static void setExecutingInitSql(boolean executingInitSql) {
         ExecutionTracer.executingInitSql = executingInitSql;
+    }
+
+    public static void setExecutingInitMongo(boolean executingInitMongo) {
+        ExecutionTracer.executingInitMongo = executingInitMongo;
     }
 
     public static boolean isExecutingAction() {
@@ -408,6 +414,16 @@ public class ExecutionTracer {
     public static void addSqlInfo(SqlInfo info) {
         if (!executingInitSql)
             getCurrentAdditionalInfo().addSqlInfo(info);
+    }
+
+    public static void addMongoInfo(MongoInfo info){
+        if (!executingInitMongo)
+            getCurrentAdditionalInfo().addMongoInfo(info);
+    }
+
+    public static void addMongoCollectionInfo(MongoCollectionInfo info){
+        if (!executingInitMongo)
+            getCurrentAdditionalInfo().addMongoCollectionInfo(info);
     }
 
     public static void markLastExecutedStatement(String lastLine, String lastMethod) {

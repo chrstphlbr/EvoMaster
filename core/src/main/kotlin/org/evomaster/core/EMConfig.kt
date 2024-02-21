@@ -127,10 +127,16 @@ class EMConfig {
                 val constraints: String,
                 val enumExperimentalValues: String,
                 val enumValidValues: String,
-                val experimental: Boolean
+                val experimental: Boolean,
+                val debug: Boolean
         ) {
             override fun toString(): String {
+
                 var description = text
+
+                if(debug){
+                    description += " [DEBUG option]."
+                }
                 if (constraints.isNotBlank()) {
                     description += " [Constraints: $constraints]."
                 }
@@ -141,9 +147,6 @@ class EMConfig {
                     description += " [Experimental Values: $enumExperimentalValues]."
                 }
 
-
-
-
                 if (experimental) {
                     /*
                     TODO: For some reasons, coloring is not working here.
@@ -153,6 +156,7 @@ class EMConfig {
                     //description = AnsiColor.inRed("EXPERIMENTAL: $description")
                     description = "EXPERIMENTAL: $description"
                 }
+
                 return description
             }
         }
@@ -160,7 +164,7 @@ class EMConfig {
         fun getDescription(m: KMutableProperty<*>): ConfigDescription {
 
             val cfg = (m.annotations.find { it is Cfg } as? Cfg)
-                    ?: throw IllegalArgumentException("Property ${m.name} is not annotated with @Cfg")
+                ?: throw IllegalArgumentException("Property ${m.name} is not annotated with @Cfg")
 
             val text = cfg.description.trim().run {
                 when {
@@ -196,24 +200,30 @@ class EMConfig {
                 }
             }
 
-            var experimentalValues =""
+            var experimentalValues = ""
             var validValues = ""
             val returnType = m.returnType.javaType as Class<*>
 
             if (returnType.isEnum) {
                 val elements = returnType.getDeclaredMethod("values")
-                        .invoke(null) as Array<*>
-                val experimentElements= elements.filter{ it is WithExperimentalOptions && it.isExperimental()}
-                val validElements= elements.filter{ it !is WithExperimentalOptions || !it.isExperimental()}
+                    .invoke(null) as Array<*>
+                val experimentElements = elements.filter { it is WithExperimentalOptions && it.isExperimental() }
+                val validElements = elements.filter { it !is WithExperimentalOptions || !it.isExperimental() }
                 experimentalValues = experimentElements.joinToString(", ")
                 validValues = validElements.joinToString(", ")
             }
 
             val experimental = (m.annotations.find { it is Experimental } as? Experimental)
+            val debug = (m.annotations.find { it is Debug } as? Debug)
 
-            val cd = ConfigDescription(text, constraints, experimentalValues ,validValues, experimental != null)
-
-            return cd
+            return ConfigDescription(
+                text,
+                constraints,
+                experimentalValues,
+                validValues,
+                experimental != null,
+                debug != null
+            )
         }
 
 
@@ -264,7 +274,7 @@ class EMConfig {
             Each option field might have specific constraints, setup with @annotations.
             However, there can be multi-field constraints as well.
             Those are defined here.
-            They can be check only once all fields have been updated
+            They can be checked only once all fields have been updated
          */
 
         if(!blackBox && bbSwaggerUrl.isNotBlank()){
@@ -272,6 +282,11 @@ class EMConfig {
         }
         if(!blackBox && bbTargetUrl.isNotBlank()){
             throw IllegalArgumentException("'bbTargetUrl' should be set only in black-box mode")
+        }
+
+        // ONUR, this line is changed since it did not compile in the previous case.
+        if(!endpointFocus.isNullOrBlank() && !endpointPrefix.isNullOrBlank()){
+            throw IllegalArgumentException("both 'endpointFocus' and 'endpointPrefix' are set")
         }
 
         if (blackBox && !bbExperiments) {
@@ -364,8 +379,11 @@ class EMConfig {
             //throw IllegalArgumentException("The option to turn on Executive Summary is only meaningful when clustering is turned on (--testSuiteSplitType CLUSTERING).")
         }
 
-        if (enablePureRPCTestGeneration && outputFormat != OutputFormat.DEFAULT && !outputFormat.isJava()){
-            throw IllegalArgumentException("when generating pure RPC tests, outputFormat only supports JAVA now")
+        if (problemType == ProblemType.RPC
+            && createTests
+            && (enablePureRPCTestGeneration || enableRPCAssertionWithInstance)
+            && outputFormat  != OutputFormat.DEFAULT && (!outputFormat.isJavaOrKotlin())){
+            throw IllegalArgumentException("when generating RPC tests with actual object instances in specified format, outputFormat only supports Java or Kotlin now")
         }
 
         val jaCoCo_on = jaCoCoAgentLocation.isNotBlank() && jaCoCoCliLocation.isNotBlank() && jaCoCoOutputFile.isNotBlank()
@@ -525,6 +543,8 @@ class EMConfig {
 
     fun shouldGenerateSqlData() = isMIO() && (generateSqlDataWithDSE || generateSqlDataWithSearch)
 
+    fun shouldGenerateMongoData() = generateMongoData
+
     fun experimentalFeatures(): List<String> {
 
         val properties = getConfigurationProperties()
@@ -585,6 +605,16 @@ class EMConfig {
     @Target(AnnotationTarget.PROPERTY)
     @MustBeDocumented
     annotation class Regex(val regex: String)
+
+
+    /**
+     * For internal configurations that we introduced just to get more info on EM,
+     * with aim of debugging issues.
+     */
+    @Target(AnnotationTarget.PROPERTY)
+    @MustBeDocumented
+    annotation class Debug
+
 
 
     /**
@@ -819,12 +849,16 @@ class EMConfig {
     @Cfg("Instead of generating a single test file, it could be split in several files, according to different strategies")
     var testSuiteSplitType = TestSuiteSplitType.CLUSTER
 
+    @Experimental
+    @Cfg("Specify the maximum number of tests to be generated in one test suite. " +
+            "Note that a negative number presents no limit per test suite")
+    var maxTestsPerTestSuite = -1
+
     @Cfg("Generate an executive summary, containing an example of each category of potential fault found." +
                     "NOTE: This option is only meaningful when used in conjuction with clustering. " +
                     "This is achieved by turning the option --testSuiteSplitType to CLUSTER")
     var executiveSummary = true
 
-    @Experimental
     @Cfg("The Distance Metric Last Line may use several values for epsilon." +
             "During experimentation, it may be useful to adjust these values. Epsilon describes the size of the neighbourhood used for clustering, so may result in different clustering results." +
             "Epsilon should be between 0.0 and 1.0. If the value is outside of that range, epsilon will use the default of 0.8.")
@@ -832,7 +866,6 @@ class EMConfig {
     @Max(1.0)
     var lastLineEpsilon = 0.8
 
-    @Experimental
     @Cfg("The Distance Metric Error Text may use several values for epsilon." +
             "During experimentation, it may be useful to adjust these values. Epsilon describes the size of the neighbourhood used for clustering, so may result in different clustering results." +
             "Epsilon should be between 0.0 and 1.0. If the value is outside of that range, epsilon will use the default of 0.8.")
@@ -930,6 +963,9 @@ class EMConfig {
     @Cfg("When running experiments and statistic files are generated, all configs are saved." +
             " So, this one can be used as extra label for classifying the experiment")
     var labelForExperiments = "-"
+
+    @Cfg("Further label to represent the names of CONFIGS sets in experiment scripts, e.g., exp.py")
+    var labelForExperimentConfigs = "-"
 
     @Cfg("Whether we should collect data on the extra heuristics. Only needed for experiments.")
     var writeExtraHeuristicsFile = false
@@ -1033,11 +1069,22 @@ class EMConfig {
     @Min(1.0)
     var maxTestSize = 10
 
+    @Cfg("Based on some heuristics, there are cases in which 'maxTestSize' can be overridden at runtime")
+    var enableOptimizedTestSize = true
+
     @Cfg("Tracking of SQL commands to improve test generation")
     var heuristicsForSQL = true
 
+    @Experimental
+    @Cfg("Tracking of Mongo commands to improve test generation")
+    var heuristicsForMongo = false
+
     @Cfg("Enable extracting SQL execution info")
     var extractSqlExecutionInfo = true
+
+    @Experimental
+    @Cfg("Enable extracting Mongo execution info")
+    var extractMongoExecutionInfo = false
 
     @Experimental
     @Cfg("Enable EvoMaster to generate SQL data with direct accesses to the database. Use Dynamic Symbolic Execution")
@@ -1046,19 +1093,17 @@ class EMConfig {
     @Cfg("Enable EvoMaster to generate SQL data with direct accesses to the database. Use a search algorithm")
     var generateSqlDataWithSearch = true
 
+    @Experimental
+    @Cfg("Enable EvoMaster to generate Mongo data with direct accesses to the database")
+    var generateMongoData = false
+
     @Cfg("When generating SQL data, how many new rows (max) to generate for each specific SQL Select")
     @Min(1.0)
     var maxSqlInitActionsPerMissingData = 5
 
 
-    /*
-        Likely this should always be on by default... it would increase search space, but that would be handled by
-        adaptive hypermutation
-        TODO need experiments
-     */
-    @Experimental
     @Cfg("Force filling data of all columns when inserting new row, instead of only minimal required set.")
-    var forceSqlAllColumnInsertion = false
+    var forceSqlAllColumnInsertion = true
 
 
     @Cfg("Maximum size (in bytes) that EM handles response payloads in the HTTP responses. " +
@@ -1069,12 +1114,12 @@ class EMConfig {
     @Cfg("Whether to print how much search done so far")
     var showProgress = true
 
-    @Experimental
+    @Debug
     @Cfg("Whether or not enable a search process monitor for archiving evaluated individuals and Archive regarding an evaluation of search. " +
             "This is only needed when running experiments with different parameter settings")
     var enableProcessMonitor = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a format to save the process data")
     var processFormat = ProcessDataFormat.JSON_ALL
 
@@ -1095,18 +1140,17 @@ class EMConfig {
         TARGET_TEST_IND
     }
 
-    @Experimental
+    @Debug
     @Cfg("Specify a folder to save results when a search monitor is enabled")
     @Folder
     var processFiles = "process_data"
 
-    @Experimental
+    @Debug
     @Cfg("Specify how often to save results when a search monitor is enabled, and 0.0 presents to record all evaluated individual")
     @Max(50.0)
     @Min(0.0)
     var processInterval = 0.0
 
-    @Experimental
     @Cfg("Whether to enable tracking the history of modifications of the individuals during the search")
     var enableTrackIndividual = false
 
@@ -1115,7 +1159,6 @@ class EMConfig {
             "Note that we enforced that set enableTrackIndividual false when enableTrackEvaluatedIndividual is true since information of individual is part of evaluated individual")
     var enableTrackEvaluatedIndividual = true
 
-    @Experimental
     @Cfg("Specify a maxLength of tracking when enableTrackIndividual or enableTrackEvaluatedIndividual is true. " +
             "Note that the value should be specified with a non-negative number or -1 (for tracking all history)")
     @Min(-1.0)
@@ -1161,6 +1204,12 @@ class EMConfig {
             " on the JVM.")
     var instrumentMR_EXT_0 = true
 
+    @Experimental
+    @Cfg("Execute instrumentation for method replace with category MONGO." +
+            " Note: this applies only for languages in which instrumentation is applied at runtime, like Java/Kotlin" +
+            " on the JVM.")
+    var instrumentMR_MONGO = false
+
 
     @Cfg("Execute instrumentation for method replace with category NET." +
             " Note: this applies only for languages in which instrumentation is applied at runtime, like Java/Kotlin" +
@@ -1173,19 +1222,16 @@ class EMConfig {
     var expandRestIndividuals = true
 
 
-    @Experimental
     @Cfg("Add an extra query param, to analyze how it is used/read by the SUT. Needed to discover new query params" +
             " that were not specified in the schema.")
-    var extraQueryParam = false
+    var extraQueryParam = true
 
 
-    @Experimental
     @Cfg("Add an extra HTTP header, to analyze how it is used/read by the SUT. Needed to discover new headers" +
             " that were not specified in the schema.")
-    var extraHeader = false
+    var extraHeader = true
 
 
-    @Experimental
     @Cfg("Percentage [0.0,1.0] of elapsed time in the search while trying to infer any extra query parameter and" +
             " header. After this time has passed, those attempts stop. ")
     @PercentageAsProbability(false)
@@ -1229,11 +1275,11 @@ class EMConfig {
     @Probability
     var probOfEnablingResourceDependencyHeuristics = 0.95
 
-    @Experimental
+    @Debug
     @Cfg("Specify whether to export derived dependencies among resources")
     var exportDependencies = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a file that saves derived dependencies")
     @FilePath
     var dependencyFile = "dependencies.csv"
@@ -1333,19 +1379,18 @@ class EMConfig {
 
     @Experimental
     @Cfg("Specify a probability of applying length handling")
+    @Probability
     var probOfHandlingLength = 0.0
 
     @Experimental
-    @Cfg("Specify a max size of a test to be targeted when either DPC_INCREASING or DPC_DECREASING is enabeld")
+    @Cfg("Specify a max size of a test to be targeted when either DPC_INCREASING or DPC_DECREASING is enabled")
     var dpcTargetTestSize = 1
 
-    @Experimental
     @Cfg("Specify a minimal number of rows in a table that enables selection (i.e., SELECT sql) to prepare resources for REST Action. " +
-            "In other word, if the number is less than the specified, insertion is always applied.")
+            "In other words, if the number is less than the specified, insertion is always applied.")
     @Min(0.0)
     var minRowOfTable = 10
 
-    @Experimental
     @Cfg("Specify a probability that enables selection (i.e., SELECT sql) of data from database instead of insertion (i.e., INSERT sql) for preparing resources for REST actions")
     @Probability(false)
     var probOfSelectFromDatabase = 0.1
@@ -1353,16 +1398,16 @@ class EMConfig {
     @Cfg("Whether to apply text/name analysis to derive relationships between name entities, e.g., a resource identifier with a name of table")
     var doesApplyNameMatching = true
 
-    @Experimental
+    @Deprecated("Experiment results were not good, and library is huge in terms of MBs...")
     @Cfg("Whether to employ NLP parser to process text. " +
             "Note that to enable this parser, it is required to build the EvoMaster with the resource profile, i.e., mvn clean install -Presourceexp -DskipTests")
     var enableNLPParser = false
 
-    @Experimental
+    @Debug
     @Cfg("Whether to save mutated gene info, which is typically used for debugging mutation")
     var saveMutationInfo = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save mutation details which is useful for debugging mutation")
     @FilePath
     var mutatedGeneFile = "mutatedGeneInfo.csv"
@@ -1389,7 +1434,7 @@ class EMConfig {
          */
         EXPANDED_UPDATED_NOT_COVERED_TARGET,
         /**
-         * only employ current not covered targets obtainedby archive
+         * only employ current not covered targets obtained by archive
          *
          * e.g., mutate an individual with 10times, at first, the current not covered target is {A, B}
          * after the 2nd mutation, A is covered, C is newly reached,
@@ -1398,31 +1443,28 @@ class EMConfig {
         UPDATED_NOT_COVERED_TARGET
     }
 
-    @Experimental
+    @Debug
     @Cfg("Whether to record targets when the number is more than 100")
     var recordExceededTargets = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save all not covered targets when the number is more than 100")
     @FilePath
     var exceedTargetsFile = "exceedTargets.txt"
 
-    @Experimental
+
     @Cfg("Specify a probability to apply S1iR when resource sampling strategy is 'Customized'")
     @Probability(false)
     var S1iR: Double = 0.25
 
-    @Experimental
     @Cfg("Specify a probability to apply S1dR when resource sampling strategy is 'Customized'")
     @Probability(false)
     var S1dR: Double = 0.25
 
-    @Experimental
     @Cfg("Specify a probability to apply S2dR when resource sampling strategy is 'Customized'")
     @Probability(false)
     var S2dR: Double = 0.25
 
-    @Experimental
     @Cfg("Specify a probability to apply SMdR when resource sampling strategy is 'Customized'")
     @Probability(false)
     var SMdR: Double = 0.25
@@ -1433,7 +1475,6 @@ class EMConfig {
     @Cfg("Whether to specialize sql gene selection to mutation")
     var specializeSQLGeneSelection = true
 
-    @Experimental
     @Cfg("Specify a starting percentage of genes of an individual to mutate")
     @PercentageAsProbability(false)
     var startingPerOfGenesToMutate = 0.5
@@ -1448,7 +1489,7 @@ class EMConfig {
     @Probability
     var probOfArchiveMutation = 0.5
 
-    @Experimental
+    @Debug
     @Cfg("Specify whether to collect impact info that provides an option to enable of collecting impact info when archive-based gene selection is disable. ")
     var doCollectImpact = false
 
@@ -1484,20 +1525,20 @@ class EMConfig {
     @Cfg("Specify whether to enable weight-based mutation selection for selecting genes to mutate for a gene")
     var enableWeightBasedMutationRateSelectionForGene = true
 
-    @Experimental
+    @Debug
     @Cfg("Whether to save archive info after each of mutation, which is typically useful for debugging mutation and archive")
     var saveArchiveAfterMutation = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save archive after each mutation during search, only useful for debugging")
     @FilePath
     var archiveAfterMutationFile = "archive.csv"
 
-    @Experimental
+    @Debug
     @Cfg("Whether to save impact info after each of mutation, which is typically useful debugging impact driven solutions and mutation")
     var saveImpactAfterMutation = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save collected impact info after each mutation during search, only useful for debugging")
     @FilePath
     var impactAfterMutationFile = "impactSnapshot.csv"
@@ -1548,11 +1589,11 @@ class EMConfig {
         ADAPTIVE
     }
 
-    @Experimental
+    @Debug
     @Cfg("Specify whether to export derived impacts among genes")
     var exportImpacts = false
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save derived genes")
     @FilePath
     var impactFile = "impact.csv"
@@ -1561,9 +1602,8 @@ class EMConfig {
     @Probability
     var baseTaintAnalysisProbability = 0.9
 
-    @Experimental
     @Cfg("Whether input tracking is used on sampling time, besides mutation time")
-    var taintOnSampling = false
+    var taintOnSampling = true
 
     @Probability
     @Experimental
@@ -1593,7 +1633,6 @@ class EMConfig {
     @FilePath
     var coveredTargetFile = "coveredTargets.txt"
 
-    @Experimental
     @Cfg("Specify a format to organize the covered targets by the search")
     var coveredTargetSortedBy = SortCoveredTargetBy.NAME
 
@@ -1613,8 +1652,13 @@ class EMConfig {
          */
     }
 
-    @Cfg("Only for debugging. Concentrate search on only one single REST endpoint")
+    @Cfg("Concentrate search on only one single REST endpoint")
     var endpointFocus : String? = null
+
+    @Cfg("Concentrate search on a set of REST endpoints defined by a common prefix")
+    var endpointPrefix : String? = null
+
+    //TODO Andrea/Man. will need to discuss how this can be refactored for RPC as well
 
     @Experimental
     @Cfg("Whether to seed EvoMaster with some initial test cases. These test cases will be used and evolved throughout the search process")
@@ -1652,7 +1696,6 @@ class EMConfig {
      */
     val defaultTreeDepth = 4
 
-    @Experimental
     @Cfg("Maximum tree depth in mutations/queries to be evaluated." +
             " This is to avoid issues when dealing with huge graphs in GraphQL")
     @Min(1.0)
@@ -1664,7 +1707,7 @@ class EMConfig {
             "Note that a negative number means all existing data would be sampled")
     var maximumExistingDataToSampleInDb = -1
 
-    @Experimental
+    @Debug
     @Cfg("Whether to output executed sql info")
     var outputExecutedSQL = OutputExecutedSQL.NONE
 
@@ -1684,37 +1727,31 @@ class EMConfig {
         ONCE_EXECUTED
     }
 
-    @Experimental
+    @Debug
     @Cfg("Specify a path to save all executed sql commands to a file (default is 'sql.txt')")
     var saveExecutedSQLToFile : String = "sql.txt"
 
-    @Experimental
     @Cfg("Whether to enable extra targets for responses, e.g., regarding nullable response, having extra targets for whether it is null")
-    var enableRPCExtraResponseTargets = false
+    var enableRPCExtraResponseTargets = true
 
-    @Experimental
     @Cfg("Whether to enable customized responses indicating business logic")
-    var enableRPCCustomizedResponseTargets = false
+    var enableRPCCustomizedResponseTargets = true
 
-    @Experimental
     @Cfg("Whether to generate RPC endpoint invocation which is independent from EM driver.")
-    var enablePureRPCTestGeneration = false
+    var enablePureRPCTestGeneration = true
 
-    @Experimental
     @Cfg("Whether to generate RPC Assertions based on response instance")
-    var enableRPCAssertionWithInstance = false
+    var enableRPCAssertionWithInstance = true
 
     @Experimental
     @Cfg("Whether to enable customized RPC Test output if 'customizeRPCTestOutput' is implemented")
     var enableRPCCustomizedTestOutput = false
 
-    @Experimental
     @Cfg("Specify a maximum number of data in a collection to be asserted in the generated tests." +
             " Note that zero means that only the size of the collection will be asserted." +
             " A negative value means all data in the collection will be asserted (i.e., no limit).")
     var maxAssertionForDataInCollection = 3
 
-    @Experimental
     @Cfg("Specify whether to employ smart database clean to clear data in the database if the SUT has." +
             "`null` represents to employ the setting specified on the EM driver side")
     var employSmartDbClean : Boolean? = null
@@ -1724,7 +1761,27 @@ class EMConfig {
     var addPreDefinedTests : Boolean = true
 
 
-    @Experimental
+    @Cfg("Apply a minimization phase to make the generated tests more readable." +
+            " Achieved coverage would stay the same." +
+            " Generating shorter test cases might come at the cost of having more test cases.")
+    var minimize : Boolean = true
+
+
+    @Cfg("Maximum number of minutes that will be dedicated to the minimization phase." +
+            " A negative number mean no timeout is considered." +
+            " A value of 0 means minimization will be skipped, even if minimize=true.")
+    var minimizeTimeout = 5
+
+
+    @Cfg("When applying minimization phase, and some targets get lost when re-computing coverage," +
+            " then printout a detailed description.")
+    var minimizeShowLostTargets = true
+
+    @PercentageAsProbability
+    @Cfg("Losing targets when recomputing coverage is expected (e.g., constructors of singletons)," +
+            " but problematic if too much")
+    var minimizeThresholdForLoss = 0.2
+
     @FilePath(true)
     @Regex("(.*jacoco.*\\.jar)|(^$)")
     @Cfg("Path on filesystem of where JaCoCo Agent jar file is located." +
@@ -1733,7 +1790,6 @@ class EMConfig {
             " Note that this only impact the generated output test cases.")
     var jaCoCoAgentLocation = ""
 
-    @Experimental
     @FilePath(true)
     @Regex("(.*jacoco.*\\.jar)|(^$)")
     @Cfg("Path on filesystem of where JaCoCo CLI jar file is located." +
@@ -1742,7 +1798,6 @@ class EMConfig {
             " Note that this only impact the generated output test cases.")
     var jaCoCoCliLocation = ""
 
-    @Experimental
     @FilePath(true)
     @Cfg(" Destination file for JaCoCo." +
             " Option meaningful only for External Drivers for JVM." +
@@ -1750,12 +1805,10 @@ class EMConfig {
             " Note that this only impact the generated output test cases.")
     var jaCoCoOutputFile = ""
 
-    @Experimental
     @Min(0.0) @Max(maxTcpPort)
     @Cfg("Port used by JaCoCo to export coverage reports")
     var jaCoCoPort = 8899
 
-    @Experimental
     @FilePath
     @Cfg("Command for 'java' used in the External Drivers." +
             " Useful for when there are different JDK installed on same machine without the need" +
@@ -1794,8 +1847,8 @@ class EMConfig {
     var externalServiceIP : String = "127.0.0.2"
 
     @Experimental
-    @Cfg("Whether to apply customized method (i.e., implement 'customizeMockingRPCExternalService') to handle external services.")
-    var enableCustomizedExternalServiceHandling = false
+    @Cfg("Whether to apply customized method (i.e., implement 'customizeMockingRPCExternalService' for external services or 'customizeMockingDatabase' for database) to handle mock object.")
+    var enableCustomizedMethodForMockObjectHandling = false
 
     @Experimental
     @Cfg("Whether to save mocked responses as separated files")
@@ -1803,19 +1856,25 @@ class EMConfig {
 
     @Experimental
     @Cfg("Specify test resource path where to save mocked responses as separated files")
+    //TODO need proper constraint checking
     var testResourcePathToSaveMockedResponse = ""
 
-    @Experimental
     @Cfg("Whether to analyze how SQL databases are accessed to infer extra constraints from the business logic." +
             " An example is javax/jakarta annotation constraints defined on JPA entities.")
     @Probability(true)
-    var useExtraSqlDbConstraintsProbability = 0.0
+    var useExtraSqlDbConstraintsProbability = 0.9
 
 
     @Cfg("a probability of harvesting actual responses from external services as seeds.")
     @Experimental
     @Probability(activating = true)
     var probOfHarvestingResponsesFromActualExternalServices = 0.0
+
+
+    @Cfg("a probability of prioritizing to employ successful harvested actual responses from external services as seeds (e.g., 2xx from HTTP external service).")
+    @Experimental
+    @Probability(activating = true)
+    var probOfPrioritizingSuccessfulHarvestedActualResponses = 0.0
 
     @Cfg("a probability of mutating mocked responses based on actual responses")
     @Experimental
@@ -1827,28 +1886,55 @@ class EMConfig {
     @Experimental
     var externalRequestHarvesterNumberOfThreads: Int = 2
 
-    @Cfg("Whether to employ constraints specified in API schema (e.g., OpenAPI) in test generation")
+
+    enum class ExternalRequestResponseSelectionStrategy {
+        /**
+         * Selects the exact matching response for the request.
+         */
+        EXACT,
+
+        /**
+         * If there is no exact match, selects the closest matching response from the same domain based on the
+         * request path.
+         */
+        CLOSEST_SAME_DOMAIN,
+
+        /**
+         * If there is no exact match, selects the closest matching response from the same path based on the
+         * request path.
+         */
+        CLOSEST_SAME_PATH,
+
+        /**
+         * If there is no exact match, selects a random response for the request from the captured responses
+         * regardless of the domain.
+         */
+        RANDOM
+    }
+
+    @Cfg("Harvested external request response selection strategy")
     @Experimental
-    var enableSchemaConstraintHandling = false
+    var externalRequestResponseSelectionStrategy = ExternalRequestResponseSelectionStrategy.EXACT
+
+    @Cfg("Whether to employ constraints specified in API schema (e.g., OpenAPI) in test generation")
+    var enableSchemaConstraintHandling = true
 
     @Cfg("a probability of enabling single insertion strategy to insert rows into database.")
-    @Experimental
     @Probability(activating = true)
-    var probOfEnablingSingleInsertionForTable = 0.0
+    var probOfEnablingSingleInsertionForTable = 0.5
 
+    @Debug
     @Cfg("Whether to record info of executed actions during search")
-    @Experimental
     var recordExecutedMainActionInfo = false
 
+    @Debug
     @Cfg("Specify a path to save all executed main actions to a file (default is 'executedMainActions.txt')")
-    @Experimental
     var saveExecutedMainActionInfo = "executedMainActions.txt"
 
 
     @Cfg("Specify prefixes of targets (e.g., MethodReplacement, Success_Call, Local) which will exclude in impact collection. " +
             "Multiple exclusions should be separated with semicolon (i.e., ;).")
     @Regex(targetExclusionRegex)
-    @Experimental
     var excludeTargetsForImpactCollection = "${IdMapper.LOCAL_OBJECTIVE_KEY};${ObjectiveNaming.METHOD_REPLACEMENT}"
 
     var excludedTargetsForImpactCollection : List<String> = extractExcludedTargetsForImpactCollection()
@@ -1922,6 +2008,7 @@ class EMConfig {
         if(instrumentMR_SQL) categories.add(ReplacementCategory.SQL.toString())
         if(instrumentMR_EXT_0) categories.add(ReplacementCategory.EXT_0.toString())
         if(instrumentMR_NET) categories.add(ReplacementCategory.NET.toString())
+        if(instrumentMR_MONGO) categories.add(ReplacementCategory.MONGO.toString())
         return categories.joinToString(",")
     }
 
@@ -1941,7 +2028,7 @@ class EMConfig {
 
     fun isEnabledMutatingResponsesBasedOnActualResponse() = isMIO() && (probOfMutatingResponsesBasedOnActualResponse > 0)
 
-    fun doHarvestActualResponse() : Boolean = isMIO() && (probOfHarvestingResponsesFromActualExternalServices > 0 || probOfMutatingResponsesBasedOnActualResponse > 0)
+    fun isEnabledHarvestingActualResponse() : Boolean = isMIO() && (probOfHarvestingResponsesFromActualExternalServices > 0 || probOfMutatingResponsesBasedOnActualResponse > 0)
 
     /**
      * Check if the used algorithm is MIO.

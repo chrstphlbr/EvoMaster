@@ -21,8 +21,8 @@ import org.evomaster.core.problem.rest.param.UpdateForBodyParam
 import org.evomaster.core.problem.util.ParserDtoUtil
 import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.remote.TcpUtils
-import org.evomaster.core.search.Action
-import org.evomaster.core.search.ActionResult
+import org.evomaster.core.search.action.Action
+import org.evomaster.core.search.action.ActionResult
 import org.evomaster.core.search.FitnessValue
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.gene.*
@@ -33,6 +33,7 @@ import org.evomaster.core.search.gene.utils.GeneUtils
 import org.evomaster.core.taint.TaintAnalysis
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.net.URL
 import javax.ws.rs.ProcessingException
 import javax.ws.rs.client.ClientBuilder
 import javax.ws.rs.client.Entity
@@ -487,6 +488,15 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
                     )
                 }
 
+                TcpUtils.isUnknownHost(e) -> {
+                    throw SutProblemException("Unknown host: ${URL(getBaseUrl()).host}\n" +
+                            " Are you sure you did not misspell it?")
+                }
+
+                TcpUtils.isInternalError(e) ->{
+                    throw RuntimeException("Internal bug with EvoMaster when making a HTTP call toward ${a.resolvedPath()}", e)
+                }
+
                 else -> throw e
             }
         }
@@ -728,7 +738,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
     }
 
     protected fun restActionResultHandling(
-        individual: RestIndividual, targets: Set<Int>, actionResults: List<ActionResult>, fv: FitnessValue
+        individual: RestIndividual, targets: Set<Int>, allCovered: Boolean, actionResults: List<ActionResult>, fv: FitnessValue
     ): TestResultsDto? {
 
         if (actionResults.any { it is RestCallResult && it.getTcpProblem() }) {
@@ -744,7 +754,7 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
             return null
         }
 
-        val dto = updateFitnessAfterEvaluation(targets, individual as T, fv)
+        val dto = updateFitnessAfterEvaluation(targets, allCovered, individual as T, fv)
             ?: return null
 
         handleExtra(dto, fv)
@@ -758,14 +768,21 @@ abstract class AbstractRestFitness<T> : HttpWsFitness<T>() where T : Individual 
 
         handleExternalServiceInfo(fv, dto.additionalInfoList)
 
-        if (config.expandRestIndividuals) {
-            expandIndividual(individual, dto.additionalInfoList, actionResults)
-        }
+        if(! allCovered) {
+            if (config.expandRestIndividuals) {
+                expandIndividual(individual, dto.additionalInfoList, actionResults)
+            }
 
-        if (config.isEnabledTaintAnalysis()) {
-            Lazy.assert { actionResults.size == dto.additionalInfoList.size }
-            //TODO add taint analysis for resource-based solution
-            TaintAnalysis.doTaintAnalysis(individual, dto.additionalInfoList, randomness, config.enableSchemaConstraintHandling)
+            if (config.isEnabledTaintAnalysis()) {
+                Lazy.assert { actionResults.size == dto.additionalInfoList.size }
+                //TODO add taint analysis for resource-based solution
+                TaintAnalysis.doTaintAnalysis(
+                    individual,
+                    dto.additionalInfoList,
+                    randomness,
+                    config.enableSchemaConstraintHandling
+                )
+            }
         }
 
         return dto

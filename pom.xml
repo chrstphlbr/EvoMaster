@@ -9,7 +9,7 @@
         To change version in all modules, use:
         mvn versions:set -DnewVersion=a.b.c
      -->
-    <version>1.6.1</version>
+    <version>2.0.0</version>
 
     <inceptionYear>2016</inceptionYear>
     <name>EvoMaster</name>
@@ -116,7 +116,7 @@
         <addOpens></addOpens> <!-- overridden in profile -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>1.8</java.version>
-        <kotlin.version>1.8.0</kotlin.version>
+        <kotlin.version>1.8.20</kotlin.version>
         <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
         <junit.jupiter.version>5.7.2</junit.jupiter.version>
         <junit.platform.version>1.7.2</junit.platform.version>
@@ -148,6 +148,10 @@
         <mssql.jdbc.version>9.2.1.jre8</mssql.jdbc.version>
         <org.mybatis.spring.boot.version>2.2.0</org.mybatis.spring.boot.version>
         <thrift.libthrift.version>0.15.0</thrift.libthrift.version>
+        <io.grpc.version>1.57.2</io.grpc.version>
+        <org.xolsticeprotobuf.version>0.6.1</org.xolsticeprotobuf.version>
+        <com.google.protobuf.protoc.version>3.17.3</com.google.protobuf.protoc.version>
+        <kr.motd.maven.version>1.6.2</kr.motd.maven.version>
         <wiremock.version>2.32.0</wiremock.version>
         <apache.http.client.version>4.5.13</apache.http.client.version>
         <okhttp3.client.version>4.9.3</okhttp3.client.version>
@@ -157,6 +161,9 @@
         <micronaut.version>3.2.7</micronaut.version>
         <micronaut.openapi.version>3.2.0</micronaut.openapi.version>
         <micronaut.test.version>3.0.5</micronaut.test.version>
+        <org.mongodb.version>4.2.3</org.mongodb.version>
+        <org.locationtech.jts.version>1.19.0</org.locationtech.jts.version>
+
     </properties>
 
 
@@ -538,6 +545,17 @@
                 <artifactId>spring-boot-starter-validation</artifactId>
                 <version>${springboot.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-test</artifactId>
+                <scope>test</scope>
+                <version>${springboot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-data-mongodb</artifactId>
+                <version>${springboot.version}</version>
+            </dependency>
 
 
             <!--  SpringFox: Swagger documentation for SpringBoot-->
@@ -655,6 +673,18 @@
                 <groupId>org.mybatis.spring.boot</groupId>
                 <artifactId>mybatis-spring-boot-starter</artifactId>
                 <version>${org.mybatis.spring.boot.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>bson</artifactId>
+                <version>${org.mongodb.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-sync</artifactId>
+                <version>${org.mongodb.version}</version>
             </dependency>
 
             <!--   XML  -->
@@ -786,10 +816,29 @@
 
 
             <!-- RPC-->
+            <!--            Thrift-->
             <dependency>
                 <groupId>org.apache.thrift</groupId>
                 <artifactId>libthrift</artifactId>
                 <version>${thrift.libthrift.version}</version>
+            </dependency>
+
+
+            <!--            gRPC-->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-netty-shaded</artifactId>
+                <version>${io.grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-protobuf</artifactId>
+                <version>${io.grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-stub</artifactId>
+                <version>${io.grpc.version}</version>
             </dependency>
 
             <!-- Wiremock -->
@@ -1213,6 +1262,13 @@
                         </execution>
                     </executions>
                 </plugin>
+
+                <plugin>
+                    <groupId>org.xolstice.maven.plugins</groupId>
+                    <artifactId>protobuf-maven-plugin</artifactId>
+                    <version>${org.xolsticeprotobuf.version}</version>
+                </plugin>
+
 
             </plugins>
         </pluginManagement>

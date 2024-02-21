@@ -15,10 +15,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -92,6 +89,8 @@ public abstract class ExternalSutController extends SutController {
      */
     private volatile String jaCoCoClassDumpDir = null;
 
+    private volatile boolean needsJdk17Options = false;
+
     public final ExternalSutController setJaCoCo(String jaCoCoAgentLocation, String jaCoCoCliLocation, String jaCoCoOutputFile, String inclusions, String classDumpDir, int port, int dumpWait){
         this.jaCoCoAgentLocation = jaCoCoAgentLocation;
         this.jaCoCoCliLocation = jaCoCoCliLocation;
@@ -140,6 +139,10 @@ public abstract class ExternalSutController extends SutController {
     @Override
     public final void setupForGeneratedTest(){
         //In the past, we configured P6Spy here
+    }
+
+    public void setNeedsJdk17Options(boolean needsJdk17Options) {
+        this.needsJdk17Options = needsJdk17Options;
     }
 
     public final void setInstrumentation(boolean instrumentation) {
@@ -312,6 +315,12 @@ public abstract class ExternalSutController extends SutController {
             }
         }
 
+        if(needsJdk17Options){
+            Arrays.stream(InstrumentedSutStarter.JDK_17_JVM_OPTIONS.split(" ")).forEach(it ->
+                    command.add(it)
+            );
+        }
+
         String toSkip = System.getProperty(Constants.PROP_SKIP_CLASSES);
         if(toSkip != null && !toSkip.isEmpty()){
             command.add("-D"+Constants.PROP_SKIP_CLASSES+"="+toSkip);
@@ -451,6 +460,10 @@ public abstract class ExternalSutController extends SutController {
         if (isInstrumentationActivated()) {
             serverController.resetForNewTest();
         }
+
+        //This is needed for hack in getAdditionalInfoList()
+        //TODO possibly refactor
+        InstrumentationController.resetForNewTest();
     }
 
     @Override
@@ -460,9 +473,29 @@ public abstract class ExternalSutController extends SutController {
     }
 
     @Override
+    public final List<TargetInfo> getAllCoveredTargetInfos(){
+        checkInstrumentation();
+        return serverController.getAllCoveredTargetsInfo();
+    }
+
+
+
+    @Override
     public final List<AdditionalInfo> getAdditionalInfoList(){
         checkInstrumentation();
-        return serverController.getAdditionalInfoList();
+
+        List<AdditionalInfo> info = serverController.getAdditionalInfoList();
+        //taint on SQL would be done here in the controller, and not in the instrumented SUT
+        List<AdditionalInfo> local = ExecutionTracer.exposeAdditionalInfoList();
+        //so we need to merge results
+
+        AdditionalInfo first = info.get(0);
+
+        //TODO refactor currently action index is ignored in taint. see all issues in TaintAnalysis
+        local.stream().flatMap(x -> x.getStringSpecializationsView().entrySet().stream())
+                .forEach(p -> p.getValue().stream().forEach(s -> first.addSpecialization(p.getKey(), s)));
+
+        return info;
     }
 
     @Override
@@ -511,6 +544,14 @@ public abstract class ExternalSutController extends SutController {
         serverController.setExecutingInitSql(executingInitSql);
         // sync executingInitSql on the local ExecutionTracer
         ExecutionTracer.setExecutingInitSql(executingInitSql);
+    }
+
+    @Override
+    public final void setExecutingInitMongo(boolean executingInitMongo) {
+        checkInstrumentation();
+        serverController.setExecutingInitMongo(executingInitMongo);
+        // sync executingInitMongo on the local ExecutionTracer
+        ExecutionTracer.setExecutingInitMongo(executingInitMongo);
     }
 
     @Override

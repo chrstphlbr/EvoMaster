@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.evomaster</groupId>
         <artifactId>evomaster</artifactId>
-        <version>1.6.1</version>
+        <version>2.0.0</version>
     </parent>
 
     <artifactId>evomaster-core</artifactId>
@@ -220,6 +220,12 @@
         <dependency>
             <groupId>org.mock-server</groupId>
             <artifactId>mockserver-client-java-no-dependencies</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>bson</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

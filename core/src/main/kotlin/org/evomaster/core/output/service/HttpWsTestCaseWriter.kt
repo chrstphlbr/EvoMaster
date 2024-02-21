@@ -12,7 +12,7 @@ import org.evomaster.core.problem.httpws.HttpWsAction
 import org.evomaster.core.problem.httpws.HttpWsCallResult
 import org.evomaster.core.problem.rest.param.BodyParam
 import org.evomaster.core.problem.rest.param.HeaderParam
-import org.evomaster.core.search.ActionResult
+import org.evomaster.core.search.action.ActionResult
 import org.evomaster.core.search.EvaluatedAction
 import org.evomaster.core.search.FitnessValue
 import org.evomaster.core.search.gene.utils.GeneUtils
@@ -142,7 +142,7 @@ abstract class HttpWsTestCaseWriter : ApiTestCaseWriter() {
             .filter { !(call.auth.jsonTokenPostLogin != null && it.name.equals("Authorization", true)) }
             .filter { it.isInUse() }
             .forEach {
-                val x = it.gene.getValueAsRawString()
+                val x = it.getRawValue()
                 lines.add(".$set(\"${it.name}\", \"${GeneUtils.applyEscapes(x, GeneUtils.EscapeMode.BODY, format)}\")")
             }
 
