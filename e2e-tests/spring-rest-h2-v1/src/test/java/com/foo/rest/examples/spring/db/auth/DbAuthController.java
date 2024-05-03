@@ -2,12 +2,11 @@ package com.foo.rest.examples.spring.db.auth;
 
 import com.foo.rest.examples.spring.db.SpringWithDbController;
 import org.evomaster.client.java.controller.AuthUtils;
-import org.evomaster.client.java.controller.api.dto.AuthenticationDto;
-import org.evomaster.client.java.controller.db.DbCleaner;
-import org.evomaster.client.java.controller.db.SqlScriptRunner;
+import org.evomaster.client.java.controller.api.dto.auth.AuthenticationDto;
+import org.evomaster.client.java.sql.DbCleaner;
+import org.evomaster.client.java.sql.SqlScriptRunner;
 
 import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 

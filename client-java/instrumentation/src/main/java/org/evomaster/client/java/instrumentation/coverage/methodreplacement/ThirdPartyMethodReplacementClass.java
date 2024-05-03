@@ -6,6 +6,7 @@ import org.evomaster.client.java.instrumentation.staticstate.UnitsInfoRecorder;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 
@@ -97,13 +98,14 @@ public abstract class ThirdPartyMethodReplacementClass implements MethodReplacem
 
             for (int i = start; i < end; i++) {
                 if (annotations[i].length > 0) {
-                    Class<?> klazz = ReplacementUtils.getCastedToThirdParty(annotations[i]);
+                    Class<?> klazz = ReplacementUtils.getCastedToThirdParty(loader,annotations[i]);
                     if (klazz != null)
                         reducedInputs[i - start] = klazz;
                 }
             }
             for(int i=0; i<reducedInputs.length; i++){
                 try {
+                    //TODO might no longer be needed after change to getCastedToThirdParty
                     reducedInputs[i] = loader.loadClass(reducedInputs[i].getName());
                 } catch (ClassNotFoundException e) {
                     //shouldn't really happen...
@@ -162,6 +164,15 @@ public abstract class ThirdPartyMethodReplacementClass implements MethodReplacem
             }
 
             Class[] reducedInputs = Arrays.copyOfRange(inputs, start, end);
+            Annotation[][] annotations = m.getParameterAnnotations();
+
+            for (int i = start; i < end; i++) {
+                if (annotations[i].length > 0) {
+                    Class<?> klazz = ReplacementUtils.getCastedToThirdParty(loader,annotations[i]);
+                    if (klazz != null)
+                        reducedInputs[i - start] = klazz;
+                }
+            }
 
             Constructor targetConstructor = null;
             try {
@@ -241,9 +252,20 @@ public abstract class ThirdPartyMethodReplacementClass implements MethodReplacem
             //this would be clearly a bug...
             throw new IllegalStateException("No access to last caller class");
         }
-        //TODO what if more than 1 available ???
-        //might have to store last one in use for caller class
-        ClassLoader loader = UnitsInfoRecorder.getInstance().getClassLoaders(callerName).get(0);
+
+        /*
+            TODO what if more than 1 classloader available ???
+
+            This is tricky... originally, we went directly for classloader of caller class, to avoid possible issues
+            of class not been initialized yet.
+            however, that didn't work in some cases (eg reservations-api).
+            so, we go directly to the original class, and, if no info for it, we fallback on caller class
+         */
+        ClassLoader loader = UnitsInfoRecorder.getInstance().getFirstClassLoader(singleton.getTargetClassName());
+        if(loader == null) {
+            //might have to store last one in use for caller class
+            loader = UnitsInfoRecorder.getInstance().getClassLoaders(callerName).get(0);
+        }
 
         StateInfo info = singleton.classInfoPerClassLoader.get(loader);
 
@@ -286,5 +308,15 @@ public abstract class ThirdPartyMethodReplacementClass implements MethodReplacem
     @Override
     public final String getTargetClassName() {
         return getNameOfThirdPartyTargetClass();
+    }
+
+    protected static Object getField(Object object, String fieldName) {
+        try {
+            Field field = object.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(object);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

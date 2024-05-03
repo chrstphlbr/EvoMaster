@@ -1,46 +1,57 @@
 package org.evomaster.core.problem.rpc
 
 import org.evomaster.core.Lazy
-import org.evomaster.core.database.DbAction
-import org.evomaster.core.database.DbActionUtils
+import org.evomaster.core.search.action.Action
+import org.evomaster.core.search.action.ActionComponent
+import org.evomaster.core.search.action.ActionFilter
+import org.evomaster.core.sql.SqlAction
+import org.evomaster.core.sql.SqlActionUtils
+import org.evomaster.core.mongo.MongoDbAction
 import org.evomaster.core.problem.api.ApiWsIndividual
 import org.evomaster.core.problem.enterprise.EnterpriseActionGroup
+import org.evomaster.core.problem.enterprise.EnterpriseChildTypeVerifier
+import org.evomaster.core.problem.enterprise.SampleType
 import org.evomaster.core.problem.externalservice.ApiExternalServiceAction
+import org.evomaster.core.problem.graphql.GraphQLAction
 
 import org.evomaster.core.search.*
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.tracer.TrackOperator
+import java.util.*
 import kotlin.math.max
 
 /**
  * individual for RPC service
  */
 class RPCIndividual(
+    sampleType: SampleType,
     trackOperator: TrackOperator? = null,
     index: Int = -1,
     allActions: MutableList<ActionComponent>,
     mainSize: Int = allActions.size,
-    dbSize: Int = 0,
-    groups: GroupsOfChildren<StructuralElement> = getEnterpriseTopGroups(allActions, mainSize, dbSize)
+    sqlSize: Int = 0,
+    mongoSize: Int = 0,
+    dnsSize: Int = 0,
+    groups: GroupsOfChildren<StructuralElement> = getEnterpriseTopGroups(allActions, mainSize, sqlSize,mongoSize,dnsSize)
 ) : ApiWsIndividual(
+    sampleType,
     trackOperator, index, allActions,
-    childTypeVerifier = {
-        EnterpriseActionGroup::class.java.isAssignableFrom(it)
-                || DbAction::class.java.isAssignableFrom(it)
-    },
+    childTypeVerifier = EnterpriseChildTypeVerifier(RPCCallAction::class.java),
     groups
 ) {
 
     constructor(
+        sampleType: SampleType,
         actions: MutableList<RPCCallAction>,
         externalServicesActions: MutableList<List<ApiExternalServiceAction>> = mutableListOf(),
         /*
             TODO might add sample type here as REST (check later)
          */
-        dbInitialization: MutableList<DbAction> = mutableListOf(),
+        dbInitialization: MutableList<SqlAction> = mutableListOf(),
         trackOperator: TrackOperator? = null,
         index: Int = -1
     ) : this(
+        sampleType = sampleType,
         trackOperator = trackOperator,
         index = index,
         allActions = mutableListOf<ActionComponent>().apply {
@@ -55,7 +66,7 @@ class RPCIndividual(
                     )
                 }})
         },
-        mainSize = actions.size, dbSize = dbInitialization.size)
+        mainSize = actions.size, sqlSize = dbInitialization.size)
 
     /**
      * TODO: Verify the implementation
@@ -64,14 +75,12 @@ class RPCIndividual(
         return when (filter) {
             GeneFilter.ALL -> seeAllActions().flatMap(Action::seeTopGenes)
             GeneFilter.NO_SQL -> seeActions(ActionFilter.NO_SQL).flatMap(Action::seeTopGenes)
-            GeneFilter.ONLY_SQL -> seeDbActions().flatMap(DbAction::seeTopGenes)
+            GeneFilter.ONLY_MONGO -> seeMongoDbActions().flatMap(MongoDbAction::seeTopGenes)
+            GeneFilter.ONLY_SQL -> seeDbActions().flatMap(SqlAction::seeTopGenes)
             GeneFilter.ONLY_EXTERNAL_SERVICE -> seeExternalServiceActions().flatMap(ApiExternalServiceAction::seeTopGenes)
         }
     }
 
-    override fun size(): Int {
-        return seeMainExecutableActions().size
-    }
 
     override fun canMutateStructure(): Boolean = true
 
@@ -79,7 +88,7 @@ class RPCIndividual(
     fun seeIndexedRPCCalls(): Map<Int, RPCCallAction> = getIndexedChildren(RPCCallAction::class.java)
 
     override fun verifyInitializationActions(): Boolean {
-        return DbActionUtils.verifyActions(seeInitializingActions().filterIsInstance<DbAction>())
+        return SqlActionUtils.verifyActions(seeInitializingActions().filterIsInstance<SqlAction>())
     }
 
 
@@ -103,23 +112,33 @@ class RPCIndividual(
      * remove an action from [actions] at [position]
      */
     fun removeAction(position: Int) {
-        val removed = (killChildByIndex(getFirstIndexOfEnterpriseActionGroup() + position) as EnterpriseActionGroup).getMainAction()
-        removed.removeThisFromItsBindingGenes()
+        killChildByIndex(getFirstIndexOfEnterpriseActionGroup() + position) as EnterpriseActionGroup<*>
     }
 
-    private fun getFirstIndexOfEnterpriseActionGroup() = max(0, max(children.indexOfLast { it is DbAction }+1, children.indexOfFirst { it is EnterpriseActionGroup }))
+    private fun getFirstIndexOfEnterpriseActionGroup() = max(0, max(children.indexOfLast { it is SqlAction }+1, children.indexOfFirst { it is EnterpriseActionGroup<*> }))
 
     override fun copyContent(): Individual {
         return RPCIndividual(
+            sampleType,
             trackOperator,
             index,
             children.map { it.copy() }.toMutableList() as MutableList<ActionComponent>,
             mainSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.MAIN),
-            dbSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.INITIALIZATION_SQL)
+            sqlSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.INITIALIZATION_SQL),
+            mongoSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.INITIALIZATION_MONGO),
+            dnsSize = groupsView()!!.sizeOfGroup(GroupsOfChildren.INITIALIZATION_DNS)
         )
     }
 
     override fun seeMainExecutableActions(): List<RPCCallAction> {
         return super.seeMainExecutableActions() as List<RPCCallAction>
+    }
+
+
+    /**
+     * @return a sorted list of involved interfaces in this test
+     */
+    fun getTestedInterfaces() : SortedSet<String> {
+        return seeMainExecutableActions().map { it.interfaceId }.toSortedSet()
     }
 }

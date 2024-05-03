@@ -27,6 +27,14 @@ public class InstrumentedSutStarter {
         //AgentLoader.loadAgentClass(InstrumentingAgent.class.getName(), "foobar_packagenameshouldnotexist.");
     }
 
+
+    /**
+     *   Annoying settings needed for JDK 17 :(
+     *
+     *   Update docs/jdks.md if this changes
+     */
+    public static final String JDK_17_JVM_OPTIONS = "--add-opens java.base/java.util.regex=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED";
+
     private static boolean alreadyLoaded = false;
 
     private final SutController sutController;
@@ -34,7 +42,18 @@ public class InstrumentedSutStarter {
     public static void loadAgent(){
         if(! alreadyLoaded){
             alreadyLoaded = true;
-            AgentLoader.loadAgentClass(InstrumentingAgent.class.getName(), "foobar_packagenameshouldnotexist.");
+            try {
+                AgentLoader.loadAgentClass(InstrumentingAgent.class.getName(), "foobar_packagenameshouldnotexist.");
+            } catch (Exception e){
+                throw new RuntimeException(
+                        "\nFailed to apply bytecode instrumentation with JavaAgent." +
+                        "\nIf you are using JDK 11 or above, are you sure you added the following JVM option?" +
+                        "\n -Djdk.attach.allowAttachSelf=true " +
+                        "\nAlso, if you are using JDK 17 or above, you also need the following:" +
+                        "\n"+JDK_17_JVM_OPTIONS+
+                        "\nThis can also be set globally with the JDK_JAVA_OPTIONS environment variable."+
+                        "\nSee documentation at https://github.com/EMResearch/EvoMaster/blob/master/docs/jdks.md", e);
+            }
         }
     }
 

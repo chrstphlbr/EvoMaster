@@ -153,7 +153,6 @@ class ObjectGene(
         }
 
         val remove = randomness.choose(additionalFields!!)
-        remove.removeThisFromItsBindingGenes()
         killChild(remove)
         return true
     }
@@ -315,10 +314,15 @@ class ObjectGene(
     override fun mutationWeight(): Double = fields.map { it.mutationWeight() }.sum()
 
 
+    private fun shouldPrintAsJSON(mode: GeneUtils.EscapeMode?) : Boolean{
+        //by default, return in JSON format. same wise if we have an undefined TEXT mode
+        return mode == null || mode == GeneUtils.EscapeMode.JSON || mode == GeneUtils.EscapeMode.TEXT
+    }
+
 
     override fun getValueAsPrintableString(previousGenes: List<Gene>, mode: GeneUtils.EscapeMode?, targetFormat: OutputFormat?, extraCheck: Boolean): String {
 
-        if (mode != null && mode != GeneUtils.EscapeMode.JSON && !isFixed)
+        if (mode != null && !shouldPrintAsJSON(mode) && !isFixed)
             throw IllegalStateException("do not support getValueAsPrintableString with mode ($mode) for non-fixed ObjectGene")
         val buffer = StringBuffer()
 
@@ -326,8 +330,8 @@ class ObjectGene(
             it !is CycleObjectGene && (it !is OptionalGene || (it.isActive && it.gene !is CycleObjectGene))
         } .filter { it.isPrintable() }
 
-        //by default, return in JSON format
-        if (mode == null || mode == GeneUtils.EscapeMode.JSON) {
+
+        if (shouldPrintAsJSON(mode) || mode == GeneUtils.EscapeMode.EJSON) {
             buffer.append("{")
 
             includedFields.map {

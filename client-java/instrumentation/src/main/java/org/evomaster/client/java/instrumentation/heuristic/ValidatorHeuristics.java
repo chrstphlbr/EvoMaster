@@ -1,6 +1,7 @@
 package org.evomaster.client.java.instrumentation.heuristic;
 
-import org.evomaster.client.java.instrumentation.coverage.methodreplacement.DistanceHelper;
+import org.evomaster.client.java.distance.heuristics.Truthness;
+import org.evomaster.client.java.distance.heuristics.DistanceHelper;
 import org.evomaster.client.java.instrumentation.shared.StringSpecialization;
 import org.evomaster.client.java.instrumentation.shared.StringSpecializationInfo;
 import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
@@ -10,7 +11,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * Heuristics calculation for Java Beans, when dealing with javax.validation constraints
@@ -32,6 +32,12 @@ public class ValidatorHeuristics {
     private static final String PREFIX_HIBERNATE = "org.hibernate.validator.constraints.";
     private static final String PREFIX_JIRUKTA = "cz.jirutka.validator.collection.constraints.";
 
+    /**
+     * The original pattern "^([A-Za-z_-\+\.]){2,}@[A-Za-z]+(\.([A-Za-z]{2,})+)+$"
+     * was not correctly handled by RegexHandler.createGeneForJVM().
+     * This version is identical in terms of the valid character sequences.
+     */
+    public static final String EMAIL_REGEX_PATTERN = "^([A-Za-z_-]|\\.|\\+){2,}@[A-Za-z]+(\\.([A-Za-z]{2,})+)+$";
     /**
      *
      * @param validator  A Object reference to a javax.validation.Validator instance.
@@ -122,7 +128,6 @@ MISSING javax.
 DecimalMax
 DecimalMin
 Digits
-Email
 Future
 FutureOrPresent
 Past
@@ -213,7 +218,8 @@ TODO
                 return defaultFailed;
             }
 
-            if (annotationType.endsWith(".Pattern")) {
+            if (annotationType.endsWith(".Pattern")
+                || annotationType.endsWith(".Email")) {
             /*
                 Quite expensive to handle, see RegexDistanceUtils.
                 so, for now, we just ensure we handle taint analysis for this
@@ -221,13 +227,22 @@ TODO
                 assert invalidValue != null; // otherwise would had been valid
                 String value = invalidValue.toString();
                 if (ExecutionTracer.isTaintInput(value)) {
+                    final String pattern;
+                    if (annotationType.endsWith(".Pattern")) {
+                        pattern = attributes.get("regexp").toString();
+                    } else {
+                        assert(annotationType.endsWith(".Email"));
+                        pattern = EMAIL_REGEX_PATTERN;
+                    }
+
                     ExecutionTracer.addStringSpecialization(value,
                             new StringSpecializationInfo(StringSpecialization.REGEX_WHOLE,
-                                    attributes.get("value").toString()));
+                                    pattern));
                 }
 
                 return defaultFailed;
             }
+
         }
 
         SimpleLogger.warn("Not able to handle constrain type: " + annotationType);
@@ -370,9 +385,9 @@ EachURL
         if(invalidValue instanceof CharSequence){
             size = ((CharSequence) invalidValue).length();
         } else if(invalidValue instanceof Collection){
-            size = ((Collection) invalidValue).size();
+            size = ((Collection<?>) invalidValue).size();
         } else if(invalidValue instanceof Map){
-            size = ((Map)invalidValue).size();
+            size = ((Map<?,?>)invalidValue).size();
         } else if(invalidValue.getClass().isArray()){
             size =  Array.getLength(invalidValue);
         } else {

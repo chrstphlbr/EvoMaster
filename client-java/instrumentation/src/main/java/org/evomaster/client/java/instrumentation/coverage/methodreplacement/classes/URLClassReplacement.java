@@ -1,9 +1,10 @@
 package org.evomaster.client.java.instrumentation.coverage.methodreplacement.classes;
 
+import org.evomaster.client.java.distance.heuristics.DistanceHelper;
 import org.evomaster.client.java.instrumentation.ExternalServiceInfo;
 import org.evomaster.client.java.instrumentation.shared.PreDefinedSSLInfo;
 import org.evomaster.client.java.instrumentation.coverage.methodreplacement.*;
-import org.evomaster.client.java.instrumentation.heuristic.Truthness;
+import org.evomaster.client.java.distance.heuristics.Truthness;
 import org.evomaster.client.java.instrumentation.shared.*;
 import org.evomaster.client.java.instrumentation.staticstate.ExecutionTracer;
 import org.evomaster.client.java.utils.SimpleLogger;
@@ -152,6 +153,8 @@ public class URLClassReplacement implements MethodReplacementClass {
                 && !ExecutionTracer.skipHostnameAndPort(caller.getHost(), port))
         {
 
+            ExternalServiceInfoUtils.analyzeDnsResolution(caller.getHost());
+
             if (caller.getProtocol().equalsIgnoreCase("https"))
                 PreDefinedSSLInfo.setTrustAllForHttpsURLConnection();
 
@@ -160,6 +163,9 @@ public class URLClassReplacement implements MethodReplacementClass {
 
             // Usage of ports below 1024 require root privileges to run
             String url = caller.getProtocol()+"://" + ipAndPort[0]+":"+ipAndPort[1] + caller.getPath();
+
+            if (caller.getQuery() != null)
+                url = url + "?" + caller.getQuery();
 
             return new URL(url);
         }

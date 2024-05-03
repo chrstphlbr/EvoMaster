@@ -26,10 +26,12 @@ public class ReplacementList {
         if(listCache == null) {
             listCache = Arrays.asList(
                     new AbstractEndpointClassReplacement(),
+                    new Base64DecoderClassReplacement(),
                     new BooleanClassReplacement(),
                     new ByteClassReplacement(),
                     new CharacterClassReplacement(),
                     new CollectionClassReplacement(),
+                    new CursorPreparerClassReplacement(),
                     new DateClassReplacement(),
                     new DateFormatClassReplacement(),
                     new DoubleClassReplacement(),
@@ -48,11 +50,14 @@ public class ReplacementList {
                     new MapClassReplacement(),
                     new MatcherClassReplacement(),
                     new MethodClassReplacement(),
+                    new MongoCollectionClassReplacement(),
+                    new MappingMongoEntityInformationClassReplacement(),
                     new OkHttpClient3BuilderClassReplacement(),
                     new OkHttpClient3ClassReplacement(),
                     new OkHttpClientClassReplacement(),
                     new OkUrlFactoryClassReplacement(),
                     new ObjectClassReplacement(),
+                    new ObjectIdClassReplacement(),
                     new ObjectsClassReplacement(),
                     new PatternClassReplacement(),
                     new PreparedStatementClassReplacement(),
@@ -67,6 +72,7 @@ public class ReplacementList {
                     new UUIDClassReplacement(),
                     new ValidatorClassReplacement(),
                     new WebRequestClassReplacement()
+                    /* Note: Add new class replacements only in alphabetic order */
             );
 
             /*

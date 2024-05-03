@@ -2,12 +2,14 @@ package org.evomaster.core.problem.rest.service
 
 import com.google.inject.Inject
 import org.evomaster.client.java.controller.api.dto.SutInfoDto
-import org.evomaster.core.database.SqlInsertBuilder
+import org.evomaster.core.sql.SqlInsertBuilder
+import org.evomaster.core.problem.enterprise.SampleType
+import org.evomaster.core.problem.httpws.auth.HttpWsAuthenticationInfo
 import org.evomaster.core.problem.rest.*
-import org.evomaster.core.problem.httpws.auth.NoAuth
+import org.evomaster.core.problem.httpws.auth.HttpWsNoAuth
 import org.evomaster.core.problem.rest.resource.RestResourceCalls
 import org.evomaster.core.problem.rest.resource.SamplerSpecification
-import org.evomaster.core.search.ActionFilter
+import org.evomaster.core.search.action.ActionFilter
 import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.tracer.Traceable
@@ -49,9 +51,9 @@ open class ResourceSampler : AbstractRestSampler() {
 
         adHocInitialIndividuals.clear()
 
-        rm.createAdHocIndividuals(NoAuth(),adHocInitialIndividuals, getMaxTestSizeDuringSampler())
+        rm.createAdHocIndividuals(HttpWsNoAuth(),adHocInitialIndividuals, getMaxTestSizeDuringSampler())
 
-        authentications.forEach { auth ->
+        authentications.getOfType(HttpWsAuthenticationInfo::class.java).forEach { auth ->
             rm.createAdHocIndividuals(auth, adHocInitialIndividuals, getMaxTestSizeDuringSampler())
         }
     }
@@ -79,6 +81,7 @@ open class ResourceSampler : AbstractRestSampler() {
         val ind = RestIndividual(
                 resourceCalls = restCalls, sampleType = SampleType.RANDOM, dbInitialization = mutableListOf(), trackOperator = this, index = time.evaluatedIndividuals)
         ind.doGlobalInitialize(searchGlobalState)
+//        ind.computeTransitiveBindingGenes()
         return ind
     }
 
@@ -132,9 +135,8 @@ open class ResourceSampler : AbstractRestSampler() {
         //auth management
         val auth = if(authentications.isNotEmpty()){
             getRandomAuth(0.0)
-
         }else{
-            NoAuth()
+            HttpWsNoAuth()
         }
         restCalls.flatMap { it.seeActions(ActionFilter.MAIN_EXECUTABLE) }.forEach {
             (it as RestCallAction).auth = auth
@@ -147,6 +149,7 @@ open class ResourceSampler : AbstractRestSampler() {
                 dm.sampleResourceWithRelatedDbActions(individual, rm.getMaxNumOfResourceSizeHandling())
 
             individual.cleanBrokenBindingReference()
+//            individual.computeTransitiveBindingGenes()
             return individual
         }
         return null
@@ -221,7 +224,7 @@ open class ResourceSampler : AbstractRestSampler() {
         }
     }
 
-    override fun createIndividual(restCalls: MutableList<RestCallAction>): RestIndividual {
+    override fun createIndividual(sampleType: SampleType, restCalls: MutableList<RestCallAction>): RestIndividual {
 
         val resourceCalls = restCalls.map {
             val node = rm.getResourceNodeFromCluster(it.path.toString())
@@ -229,15 +232,16 @@ open class ResourceSampler : AbstractRestSampler() {
                     template = node.getTemplate(it.verb.toString()),
                     node = node,
                     actions = mutableListOf(it),
-                    dbActions = listOf()
+                    sqlActions = listOf()
             )
         }.toMutableList()
         val ind =  RestIndividual(
                 resourceCalls=resourceCalls,
-                sampleType = SampleType.SMART_RESOURCE,
+                sampleType = sampleType,
                 trackOperator = if (config.trackingEnabled()) this else null,
                 index = if (config.trackingEnabled()) time.evaluatedIndividuals else Traceable.DEFAULT_INDEX)
         ind.doGlobalInitialize(searchGlobalState)
+//        ind.computeTransitiveBindingGenes()
         return ind
     }
 }

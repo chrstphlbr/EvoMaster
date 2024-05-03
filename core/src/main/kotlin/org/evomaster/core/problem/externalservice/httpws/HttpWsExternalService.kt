@@ -8,6 +8,7 @@ import com.github.tomakehurst.wiremock.extension.responsetemplating.ResponseTemp
 import com.github.tomakehurst.wiremock.stubbing.StubMapping
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.problem.externalservice.httpws.service.HttpWsExternalServiceHandler
+import org.evomaster.core.problem.util.HttpWsUtil
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.util.*
@@ -30,7 +31,7 @@ class HttpWsExternalService(
         private const val WIREMOCK_DEFAULT_RESPONSE_CODE = 404
         private const val WIREMOCK_DEFAULT_RESPONSE_MESSAGE = "Not Found"
 
-        private val log: Logger = LoggerFactory.getLogger(HttpWsExternalServiceHandler::class.java)
+        private val log: Logger = LoggerFactory.getLogger(HttpWsExternalService::class.java)
     }
 
     /**
@@ -81,6 +82,8 @@ class HttpWsExternalService(
     fun getWMDefaultCode() = WIREMOCK_DEFAULT_RESPONSE_CODE
     fun getWMDefaultMessage() = WIREMOCK_DEFAULT_RESPONSE_MESSAGE
     fun getWMDefaultConnectionHeader() = "close"
+
+    fun getWMDefaultContentTypeHeader() = HttpWsUtil.getTextPlainContentType()
 
     fun isHttps() = externalServiceInfo.isHttps() || (!externalServiceInfo.isHttp() && externalServiceInfo.isDerivedHttps())
 

@@ -2,6 +2,7 @@ package org.evomaster.core.output.service
 
 import com.google.inject.Inject
 import org.evomaster.client.java.controller.api.dto.database.operations.InsertionDto
+import org.evomaster.client.java.controller.api.dto.database.operations.MongoInsertionDto
 import org.evomaster.core.EMConfig
 import org.evomaster.core.output.*
 import org.evomaster.core.output.service.TestWriterUtils.Companion.getWireMockVariableName
@@ -80,6 +81,21 @@ class TestSuiteWriter {
         saveToDisk(content, config, name)
     }
 
+    /**
+     * write tests during seeding
+     */
+    fun writeTestsDuringSeeding(solution: Solution<*>,
+                                controllerName: String?,
+                                controllerInput: String?,
+                                snapshotTimestamp: String = ""){
+
+        if (!config.exportTestCasesDuringSeeding || solution.individualsDuringSeeding.isEmpty()) return
+
+        val solutionDuringSeeding = solution.extractSolutionDuringSeeding()
+        writeTests(solutionDuringSeeding, controllerName, controllerInput, snapshotTimestamp)
+
+    }
+
 
     fun convertToCompilableTestCode(
         solution: Solution<*>,
@@ -141,6 +157,7 @@ class TestSuiteWriter {
                             + "Exception: ${ex.localizedMessage} \n"
                             + "At ${ex.stackTrace.joinToString(separator = " \n -> ")}. "
                 )
+                assert(false) // in our tests, this should not happen... but should not crash in production
                 Lines()
             }
             lines.add(testLines)
@@ -176,9 +193,9 @@ class TestSuiteWriter {
         }
         val all = sampler.extractFkTables(accessedTable)
 
-        if (all.isEmpty()) return "null"
+        //if (all.isEmpty()) return "null"
 
-        val input = all.groupBy { it.lowercase() }.map { it.value.first() }.joinToString(",") { "\"$it\"" }
+        val input = if(all.isEmpty()) "" else all.groupBy { it.lowercase() }.map { it.value.first() }.joinToString(",") { "\"$it\"" }
         return when {
             config.outputFormat.isJava() -> "Arrays.asList($input)"
             config.outputFormat.isKotlin() -> "listOf($input)"
@@ -356,15 +373,21 @@ class TestSuiteWriter {
                 )
             }
 
-            if(config.isEnabledExternalServiceMocking() && solution.needsMockedDns() ){
+            if(config.isEnabledExternalServiceMocking() && solution.needsHostnameReplacement() ){
                 addImport("com.alibaba.dcm.DnsCacheManipulator", lines)
             }
 
 
             if(solution.hasAnySqlAction()) {
-                addImport("org.evomaster.client.java.controller.db.dsl.SqlDsl.sql", lines, true)
+                addImport("org.evomaster.client.java.sql.dsl.SqlDsl.sql", lines, true)
                 addImport("org.evomaster.client.java.controller.api.dto.database.operations.InsertionResultsDto", lines)
                 addImport(InsertionDto::class.qualifiedName!!, lines)
+            }
+
+            if(solution.hasAnyMongoAction()) {
+                addImport("org.evomaster.client.java.controller.mongo.dsl.MongoDsl.mongo", lines, true)
+                addImport("org.evomaster.client.java.controller.api.dto.database.operations.MongoInsertionResultsDto", lines)
+                addImport(MongoInsertionDto::class.qualifiedName!!, lines)
             }
 
 
@@ -602,10 +625,12 @@ class TestSuiteWriter {
                     config.outputFormat.isJavaOrKotlin() -> {
                         addStatement("$controller.setupForGeneratedTest()", lines)
                         addStatement("$baseUrlOfSut = $controller.startSut()", lines)
+                        //registerOrExecuteInitSqlCommands
+                        addStatement("$controller.registerOrExecuteInitSqlCommandsIfNeeded()", lines)
+
                         if(config.problemType == EMConfig.ProblemType.WEBFRONTEND){
                             val infoDto = remoteController.getSutInfo()!! //TODO refactor. save it in a service
-                            val url = "$baseUrlOfSut+\"${infoDto.webProblem.urlPathOfStartingPage}\""
-                            addStatement("$baseUrlOfSut = validateAndGetUrlOfStartingPageForDocker($url, true)", lines)
+                            addStatement("$baseUrlOfSut = validateAndGetUrlOfStartingPageForDocker($baseUrlOfSut,\"${infoDto.webProblem.urlPathOfStartingPage}\", true)", lines)
                         }
                         /*
                             now only support white-box
@@ -735,7 +760,7 @@ class TestSuiteWriter {
                         addStatement("$controller.stopSut()", lines)
                         if (format.isJavaOrKotlin()
                             && config.isEnabledExternalServiceMocking()
-                            && solution.needsMockedDns()
+                            && solution.needsHostnameReplacement()
                         ) {
                             getWireMockServerActions(solution)
                                 .forEach { action ->
@@ -800,8 +825,11 @@ class TestSuiteWriter {
                         }
                 }
 
-                if (config.enableCustomizedExternalServiceHandling && testCaseWriter is RPCTestCaseWriter)
+                if (config.enableCustomizedMethodForMockObjectHandling && testCaseWriter is RPCTestCaseWriter){
                     lines.add((testCaseWriter as RPCTestCaseWriter).resetExternalServicesWithCustomizedMethod())
+                    lines.add((testCaseWriter as RPCTestCaseWriter).resetMockDatabaseObjectWithCustomizedMethod())
+                }
+
 
             } else if (format.isCsharp()) {
                 addStatement("$fixture = fixture", lines)
@@ -811,7 +839,7 @@ class TestSuiteWriter {
 
             if (format.isJavaOrKotlin()
                 && config.isEnabledExternalServiceMocking()
-                && solution.needsMockedDns()
+                && solution.needsHostnameReplacement()
             ) {
                 addStatement("DnsCacheManipulator.clearDnsCache()", lines)
             }

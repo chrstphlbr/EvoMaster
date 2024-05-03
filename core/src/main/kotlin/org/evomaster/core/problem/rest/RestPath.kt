@@ -55,6 +55,8 @@ class RestPath(path: String) {
     //memoized the value, as expensive to compute, called often, and this object is immutable anyway...
     private val computedToString: String
 
+    private val endsWithSlash : Boolean
+
     init {
         if (path.contains("?") || path.contains("#")) {
             throw IllegalArgumentException(
@@ -63,11 +65,13 @@ class RestPath(path: String) {
             )
         }
 
+        endsWithSlash = path.endsWith("/")
+
         elements = path.split("/")
-            .filter { !it.isBlank() }
+            .filter { it.isNotBlank() }
             .map { extractElement(it) }
 
-        computedToString = "/" + elements.joinToString("/")
+        computedToString = "/" + elements.joinToString("/") + if(endsWithSlash) "/" else ""
     }
 
 
@@ -146,7 +150,8 @@ class RestPath(path: String) {
         if (this.elements.size != other.elements.size) {
             return false
         }
-        return (0 until elements.size).none { this.elements[it] != other.elements[it] }
+        return (elements.indices.none { this.elements[it] != other.elements[it] })
+                && this.endsWithSlash == other.endsWithSlash
     }
 
     /**
@@ -327,6 +332,10 @@ class RestPath(path: String) {
            it seems unclear how to properly build it as a single string...
          */
 
+        if(endsWithSlash){
+            path.append("/")
+        }
+
         return URI(null, null, path.toString(), null, null).rawPath
     }
 
@@ -420,7 +429,25 @@ class RestPath(path: String) {
                     elementsToMatch.add(t.name)
             }
         }
+        if(endsWithSlash){
+            elementsToMatch.add("/")
+        }
 
         return "^" + elementsToMatch.joinToString("") + "$"
     }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as RestPath
+
+        return computedToString == other.computedToString
+    }
+
+    override fun hashCode(): Int {
+        return computedToString.hashCode()
+    }
+
+
 }

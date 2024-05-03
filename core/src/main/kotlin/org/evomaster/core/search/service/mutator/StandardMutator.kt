@@ -4,8 +4,8 @@ import org.evomaster.core.EMConfig
 import org.evomaster.core.EMConfig.GeneMutationStrategy.ONE_OVER_N
 import org.evomaster.core.EMConfig.GeneMutationStrategy.ONE_OVER_N_BIASED_SQL
 import org.evomaster.core.Lazy
-import org.evomaster.core.database.DbAction
-import org.evomaster.core.database.DbActionUtils
+import org.evomaster.core.sql.SqlAction
+import org.evomaster.core.sql.SqlActionUtils
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.problem.api.ApiWsAction
 import org.evomaster.core.problem.api.param.Param
@@ -18,13 +18,14 @@ import org.evomaster.core.problem.rest.param.UpdateForBodyParam
 import org.evomaster.core.problem.rest.resource.ResourceImpactOfIndividual
 import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.Individual
-import org.evomaster.core.search.ActionFilter
+import org.evomaster.core.search.action.ActionFilter
 import org.evomaster.core.search.Individual.GeneFilter.ALL
 import org.evomaster.core.search.Individual.GeneFilter.NO_SQL
 import org.evomaster.core.search.gene.*
 import org.evomaster.core.search.gene.collection.TaintedArrayGene
 import org.evomaster.core.search.gene.optional.CustomMutationRateGene
 import org.evomaster.core.search.gene.optional.OptionalGene
+import org.evomaster.core.search.gene.string.StringGene
 import org.evomaster.core.search.gene.utils.GeneUtils
 import org.evomaster.core.search.impact.impactinfocollection.ImpactUtils
 import org.evomaster.core.search.service.mutator.genemutation.AdditionalGeneMutationInfo
@@ -93,32 +94,34 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
         targets: Set<Int>,
         mutatedGenes: MutatedGeneSpecification?
     ): List<Gene> {
-        val genesToMutate = genesToMutation(individual, evi, targets)
-        if (genesToMutate.isEmpty()) return mutableListOf()
+        // the genes that could be possibly chosen for mutation
+        val geneCandidates = genesToMutation(individual, evi, targets)
+        if (geneCandidates.isEmpty()) return mutableListOf()
 
         val filterN = when (config.geneMutationStrategy) {
             ONE_OVER_N -> ALL
             ONE_OVER_N_BIASED_SQL -> NO_SQL
         }
-        val mutated = mutableListOf<Gene>()
+        // the actual chosen genes, that will be mutated
+        val toMutate = mutableListOf<Gene>()
 
         if (!config.isEnabledWeightBasedMutation()) {
-            val p = 1.0 / max(1, individual.seeGenes(filterN).filter { genesToMutate.contains(it) }.size)
-            while (mutated.isEmpty()) {
-                genesToMutate.forEach { g ->
+            val p = 1.0 / max(1, individual.seeGenes(filterN).filter { geneCandidates.contains(it) }.size)
+            while (toMutate.isEmpty()) {
+                geneCandidates.forEach { g ->
                     if (randomness.nextBoolean(p))
-                        mutated.add(g)
+                        toMutate.add(g)
                 }
             }
         } else {
             val enableAPC = config.isEnabledWeightBasedMutation()
                     && archiveGeneSelector.applyArchiveSelection()
 
-            val noSQLGenes = individual.seeGenes(NO_SQL).filter { genesToMutate.contains(it) }
-            val sqlGenes = genesToMutate.filterNot { noSQLGenes.contains(it) }
-            while (mutated.isEmpty()) {
+            val noSQLGenes = individual.seeGenes(NO_SQL).filter { geneCandidates.contains(it) }
+            val sqlGenes = geneCandidates.filterNot { noSQLGenes.contains(it) }
+            while (toMutate.isEmpty()) {
                 if (config.specializeSQLGeneSelection && noSQLGenes.isNotEmpty() && sqlGenes.isNotEmpty()) {
-                    mutated.addAll(
+                    toMutate.addAll(
                         mwc.selectSubGene(
                             noSQLGenes,
                             enableAPC,
@@ -130,7 +133,7 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
                             numOfGroup = 2
                         )
                     )
-                    mutated.addAll(
+                    toMutate.addAll(
                         mwc.selectSubGene(
                             sqlGenes,
                             enableAPC,
@@ -143,9 +146,9 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
                         )
                     )
                 } else {
-                    mutated.addAll(
+                    toMutate.addAll(
                         mwc.selectSubGene(
-                            genesToMutate,
+                            geneCandidates,
                             enableAPC,
                             targets,
                             null,
@@ -157,7 +160,19 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
                 }
             }
         }
-        return mutated
+
+        if(config.taintForceSelectionOfGenesWithSpecialization){
+            individual.seeGenes()
+                .filterIsInstance<StringGene>()
+                .filter { it.selectionUpdatedSinceLastMutation }
+                .forEach {
+                    if(!toMutate.contains(it)){
+                        toMutate.add(it)
+                    }
+                }
+        }
+
+        return toMutate
     }
 
     private fun mutationPreProcessing(individual: T) {
@@ -293,8 +308,8 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
     override fun postActionAfterMutation(mutatedIndividual: T, mutated: MutatedGeneSpecification?) {
 
         Lazy.assert {
-            DbActionUtils.verifyForeignKeys(
-                mutatedIndividual.seeInitializingActions().filterIsInstance<DbAction>()
+            SqlActionUtils.verifyForeignKeys(
+                mutatedIndividual.seeInitializingActions().filterIsInstance<SqlAction>()
             )
         }
 

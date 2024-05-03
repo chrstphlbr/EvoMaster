@@ -1,6 +1,6 @@
 package org.evomaster.core.search.matchproblem
 
-import org.evomaster.client.java.instrumentation.coverage.methodreplacement.DistanceHelper
+import org.evomaster.client.java.distance.heuristics.DistanceHelper
 import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.FitnessValue
 import org.evomaster.core.search.gene.numeric.DoubleGene
@@ -17,7 +17,7 @@ class PrimitiveTypeMatchFitness : FitnessFunction<PrimitiveTypeMatchIndividual>(
 
     var type : ONE2M = ONE2M.ONE_EQUAL_WITH_ONE
 
-    override fun doCalculateCoverage(individual: PrimitiveTypeMatchIndividual, targets: Set<Int>): EvaluatedIndividual<PrimitiveTypeMatchIndividual>? {
+    override fun doCalculateCoverage(individual: PrimitiveTypeMatchIndividual, targets: Set<Int>, allCovered: Boolean): EvaluatedIndividual<PrimitiveTypeMatchIndividual>? {
 
         val fv = FitnessValue(individual.size().toDouble())
 

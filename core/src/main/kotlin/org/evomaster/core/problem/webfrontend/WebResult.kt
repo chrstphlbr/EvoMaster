@@ -1,7 +1,7 @@
 package org.evomaster.core.problem.webfrontend
 
-import org.evomaster.core.search.Action
-import org.evomaster.core.search.ActionResult
+import org.evomaster.core.search.action.Action
+import org.evomaster.core.search.action.ActionResult
 import java.net.URL
 
 class WebResult : ActionResult {
@@ -19,7 +19,7 @@ class WebResult : ActionResult {
         const val VALID_HTML = "VALID_HTML"
     }
 
-    constructor(stopping: Boolean = false) : super(stopping)
+    constructor(sourceLocalId: String, stopping: Boolean = false) : super(sourceLocalId, stopping)
 
     internal constructor(other: ActionResult) : super(other)
 

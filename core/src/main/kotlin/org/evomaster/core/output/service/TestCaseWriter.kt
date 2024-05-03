@@ -6,11 +6,12 @@ import org.evomaster.core.output.Lines
 import org.evomaster.core.output.OutputFormat
 import org.evomaster.core.output.TestCase
 import org.evomaster.core.output.service.TestWriterUtils.Companion.getWireMockVariableName
+import org.evomaster.core.problem.externalservice.HostnameResolutionAction
 import org.evomaster.core.problem.externalservice.httpws.HttpWsExternalService
 import org.evomaster.core.problem.externalservice.httpws.HttpExternalServiceAction
 import org.evomaster.core.problem.externalservice.httpws.param.HttpWsResponseParam
-import org.evomaster.core.search.Action
-import org.evomaster.core.search.ActionResult
+import org.evomaster.core.search.action.Action
+import org.evomaster.core.search.action.ActionResult
 import org.evomaster.core.search.EvaluatedIndividual
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
@@ -97,12 +98,16 @@ abstract class TestCaseWriter {
             format.isCsharp() -> lines.add("public async Task ${test.name}() {")
         }
 
+
         lines.indented {
             val ind = test.test
             val insertionVars = mutableListOf<Pair<String, String>>()
+            // FIXME: HostnameResolutionActions can be a separately, for now it's under
+            //  handleFieldDeclarations.
             handleFieldDeclarations(lines, baseUrlOfSut, ind, insertionVars)
             handleActionCalls(lines, baseUrlOfSut, ind, insertionVars, testCaseName = test.name, testSuitePath)
         }
+
 
         lines.add("}")
 
@@ -134,6 +139,16 @@ abstract class TestCaseWriter {
                     any = true
                 }
         return any
+    }
+
+    fun handleHostnameResolutionActions(
+        lines: Lines,
+        actions: List<HostnameResolutionAction>
+    ) {
+        actions.forEach { action ->
+            lines.add("DnsCacheManipulator.setDnsCache(\"${action.hostname}\", \"${action.localIPAddress}\")")
+            lines.appendSemicolon(format)
+        }
     }
 
     protected fun handleExternalServiceActions(
@@ -225,13 +240,13 @@ abstract class TestCaseWriter {
     open fun addExtraInitStatement(lines: Lines) {}
 
     protected fun addActionInTryCatch(
-            call: Action,
-            index: Int,
-            testCaseName: String,
-            lines: Lines,
-            res: ActionResult,
-            testSuitePath: Path?,
-            baseUrlOfSut: String
+        call: Action,
+        index: Int,
+        testCaseName: String,
+        lines: Lines,
+        res: ActionResult,
+        testSuitePath: Path?,
+        baseUrlOfSut: String
     ) {
         when {
             /*

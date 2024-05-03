@@ -1,17 +1,22 @@
 package org.evomaster.core.problem.enterprise
 
 import org.evomaster.core.Lazy
-import org.evomaster.core.database.DbAction
-import org.evomaster.core.database.DbActionUtils
+import org.evomaster.core.search.action.Action
+import org.evomaster.core.search.action.ActionComponent
+import org.evomaster.core.search.action.ActionFilter
+import org.evomaster.core.sql.SqlAction
+import org.evomaster.core.sql.SqlActionUtils
+import org.evomaster.core.mongo.MongoDbAction
 import org.evomaster.core.problem.api.ApiWsIndividual
 import org.evomaster.core.problem.externalservice.ApiExternalServiceAction
-import org.evomaster.core.problem.graphql.GraphQLAction
+import org.evomaster.core.problem.externalservice.HostnameResolutionAction
 import org.evomaster.core.search.*
 import org.evomaster.core.search.gene.utils.GeneUtils
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.tracer.TrackOperator
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.util.*
 
 
 /**
@@ -27,6 +32,7 @@ import org.slf4j.LoggerFactory
  * per action, and not here in the initialization phase.
  */
 abstract class EnterpriseIndividual(
+    val sampleType: SampleType,
     /**
      * a tracked operator to manipulate the individual (nullable)
      */
@@ -40,8 +46,11 @@ abstract class EnterpriseIndividual(
      * a list of children of the individual
      */
     children: MutableList<out ActionComponent>,
-    childTypeVerifier: (Class<*>) -> Boolean,
-    groups : GroupsOfChildren<StructuralElement> = getEnterpriseTopGroups(children,children.size,0)
+    childTypeVerifier: EnterpriseChildTypeVerifier,
+    /**
+     * if no group definition is specified, then it is assumed that all action are for the MAIN group
+     */
+    groups : GroupsOfChildren<StructuralElement> = getEnterpriseTopGroups(children,children.size,0, 0, 0)
 ) : Individual(
     trackOperator,
     index,
@@ -54,60 +63,127 @@ abstract class EnterpriseIndividual(
 
         /**
          * Return group definition for the given children.
-         * The first [sizeDb] are assumed to be database actions, followed by [sizeMain] main actions
+         * The first [sizeSQL] are assumed to be database actions, followed by [sizeMain] main actions
          */
         fun getEnterpriseTopGroups(
             children: List<ActionComponent>,
             sizeMain: Int,
-            sizeDb: Int
+            sizeSQL: Int,
+            sizeMongo: Int,
+            sizeDNS: Int
         ) : GroupsOfChildren<StructuralElement>{
 
-            if(children.size != sizeDb + sizeMain){
+            if(children.size != sizeSQL +sizeMongo + sizeDNS + sizeMain){
                 throw IllegalArgumentException("Group size mismatch. Expected a total of ${children.size}, but" +
-                        " got main=$sizeMain and db=$sizeDb")
+                        " got main=$sizeMain,  sql=$sizeSQL, mongo=$sizeMongo, dns=$sizeDNS")
             }
-            if(sizeDb < 0){
-                throw IllegalArgumentException("Negative size for sizeDb: $sizeDb")
+            if(sizeSQL < 0){
+                throw IllegalArgumentException("Negative size for sizeSQL: $sizeSQL")
+            }
+            if(sizeMongo < 0){
+                throw IllegalArgumentException("Negative size for sizeMongo: $sizeMain")
+            }
+            if(sizeDNS < 0){
+                throw IllegalArgumentException("Negative size for sizeDNS: $sizeMain")
             }
             if(sizeMain < 0){
                 throw IllegalArgumentException("Negative size for sizeMain: $sizeMain")
             }
 
-            //TODO in future ll need to refactor to handle multiple databases and NoSQL ones
-            val db = ChildGroup<StructuralElement>(GroupsOfChildren.INITIALIZATION_SQL,{e -> e is ActionComponent && e.flatten().all { a -> a is DbAction }},
-                if(sizeDb==0) -1 else 0 , if(sizeDb==0) -1 else sizeDb-1
+            /*
+                TODO in future ll need to refactor to handle multiple databases, possibly handled with
+                one action group per database...
+                but is it really common that a SUT directly access several databases of same kind?
+             */
+
+            val startIndexSQL = children.indexOfFirst { a -> a is SqlAction }
+            val endIndexSQL = children.indexOfLast { a -> a is SqlAction }
+            val db = ChildGroup<StructuralElement>(GroupsOfChildren.INITIALIZATION_SQL,{e -> e is ActionComponent && e.flatten().all { a -> a is SqlAction }},
+                if(sizeSQL==0) -1 else startIndexSQL , if(sizeSQL==0) -1 else endIndexSQL
             )
 
-            val main = ChildGroup<StructuralElement>(GroupsOfChildren.MAIN, {e -> e !is DbAction && e !is ApiExternalServiceAction },
-                if(sizeMain == 0) -1 else sizeDb, if(sizeMain == 0) -1 else sizeDb + sizeMain - 1)
+            val startIndexMongo = children.indexOfFirst { a -> a is MongoDbAction }
+            val endIndexMongo = children.indexOfLast { a -> a is MongoDbAction }
+            val mongodb = ChildGroup<StructuralElement>(GroupsOfChildren.INITIALIZATION_MONGO,{e -> e is ActionComponent && e.flatten().all { a -> a is MongoDbAction }},
+                if(sizeMongo==0) -1 else startIndexMongo , if(sizeMongo==0) -1 else endIndexMongo
+            )
 
-            return GroupsOfChildren(children, listOf(db, main))
+            val startIndexDns = children.indexOfFirst { a -> a is HostnameResolutionAction }
+            val endIndexDns = children.indexOfLast { a -> a is HostnameResolutionAction }
+            val dns = ChildGroup<StructuralElement>(GroupsOfChildren.INITIALIZATION_DNS,{e -> e is ActionComponent && e.flatten().all { a -> a is HostnameResolutionAction }},
+                if(sizeDNS==0) -1 else startIndexDns , if(sizeDNS==0) -1 else endIndexDns
+            )
+
+            val initSize = sizeSQL+sizeMongo+sizeDNS
+
+            val main = ChildGroup<StructuralElement>(GroupsOfChildren.MAIN, {e -> e !is EnvironmentAction },
+                if(sizeMain == 0) -1 else initSize, if(sizeMain == 0) -1 else initSize + sizeMain - 1)
+
+            return GroupsOfChildren(children, listOf(db, mongodb, dns, main))
         }
     }
 
     /**
      * a list of db actions for its Initialization
      */
-    private val dbInitialization: List<DbAction>
+    private val sqlInitialization: List<SqlAction>
         get() {
             return groupsView()!!.getAllInGroup(GroupsOfChildren.INITIALIZATION_SQL)
                 .flatMap { (it as ActionComponent).flatten() }
-                .map { it as DbAction }
+                .map { it as SqlAction }
         }
+
+
+    /**
+     * Make sure that no secondary type is used in the main actions, and that only [EnterpriseActionGroup]
+     * are used.
+     *
+     * Ideally, a flattening should not impact fitness, but, in few cases, it might :(
+     * This happens eg in Rest Resource, if a middle SQL action is moved into initialization group and impact
+     * state of previous REST actions (an example of this did happen for example for CrossFkEMTest...).
+     * This means that, after a flattening, to be on safe side should recompute fitness
+     */
+    fun ensureFlattenedStructure(){
+
+        val before = seeAllActions().size
+
+        doFlattenStructure()
+
+        //make sure the flattening worked
+        Lazy.assert { isFlattenedStructure() }
+        //no base action should have been lost
+        Lazy.assert { seeAllActions().size == before }
+    }
+
+    protected open fun doFlattenStructure(){
+        //for most types, there is nothing to do.
+        //can be overridden if needed
+    }
+
+    private fun isFlattenedStructure() : Boolean{
+        return groupsView()!!.getAllInGroup(GroupsOfChildren.MAIN).all { it is EnterpriseActionGroup<*> }
+    }
+
 
     final override fun seeActions(filter: ActionFilter) : List<Action>{
         return when (filter) {
             ActionFilter.ALL -> seeAllActions()
             ActionFilter.MAIN_EXECUTABLE -> groupsView()!!.getAllInGroup(GroupsOfChildren.MAIN)
                 .flatMap { (it as ActionComponent).flatten() }
-                .filter { it !is DbAction && it !is ApiExternalServiceAction }
-            ActionFilter.INIT -> groupsView()!!.getAllInGroup(GroupsOfChildren.INITIALIZATION_SQL).flatMap { (it as ActionComponent).flatten() }
-            // WARNING: this can still return DbAction and External ones...
+                .filter { it !is SqlAction && it !is ApiExternalServiceAction }
+            ActionFilter.INIT ->
+                groupsView()!!
+                    .getAllInGroup(GroupsOfChildren.INITIALIZATION_SQL).flatMap { (it as ActionComponent).flatten() } + groupsView()!!
+                    .getAllInGroup(GroupsOfChildren.INITIALIZATION_MONGO).flatMap { (it as ActionComponent).flatten()}+ groupsView()!!
+                    .getAllInGroup(GroupsOfChildren.INITIALIZATION_DNS).flatMap { (it as ActionComponent).flatten()}
+            // WARNING: this can still return DbAction, MongoDbAction and External ones...
             ActionFilter.NO_INIT -> groupsView()!!.getAllInGroup(GroupsOfChildren.MAIN).flatMap { (it as ActionComponent).flatten() }
-            ActionFilter.ONLY_SQL -> seeAllActions().filterIsInstance<DbAction>()
-            ActionFilter.NO_SQL -> seeAllActions().filter { it !is DbAction }
+            ActionFilter.ONLY_SQL -> seeAllActions().filterIsInstance<SqlAction>()
+            ActionFilter.ONLY_MONGO -> seeAllActions().filterIsInstance<MongoDbAction>()
+            ActionFilter.NO_SQL -> seeAllActions().filter { it !is SqlAction }
             ActionFilter.ONLY_EXTERNAL_SERVICE -> seeAllActions().filterIsInstance<ApiExternalServiceAction>()
-            ActionFilter.NO_EXTERNAL_SERVICE -> seeAllActions().filter { it !is ApiExternalServiceAction }
+            ActionFilter.NO_EXTERNAL_SERVICE -> seeAllActions().filter { it !is ApiExternalServiceAction }.filter { it !is HostnameResolutionAction }
+            ActionFilter.ONLY_DNS -> groupsView()!!.getAllInGroup(GroupsOfChildren.INITIALIZATION_DNS).flatMap { (it as ActionComponent).flatten()}
         }
     }
 
@@ -136,6 +212,21 @@ abstract class EnterpriseIndividual(
         killChildByIndex(position)
     }
 
+    override fun removeMainExecutableAction(relativeIndex: Int){
+        removeMainActionGroupAt(relativeIndex)
+    }
+
+    /**
+     * @return SQL all actions before relativeIndex (exclusive) in GroupsOfChildren.MAIN
+     */
+    fun seeSQLActionBeforeIndex(relativeIndex: Int): List<SqlAction>{
+        val main = GroupsOfChildren.MAIN
+        val base = groupsView()!!.startIndexForGroupInsertionInclusive(main)
+        return (0 until relativeIndex).flatMap {
+            (children[base + it] as ActionComponent).flatten()
+        }.filterIsInstance<SqlAction>()
+    }
+
     /**
      * return a list of all db actions in [this] individual
      * that include all initializing actions plus db actions among main actions.
@@ -143,7 +234,9 @@ abstract class EnterpriseIndividual(
      * NOTE THAT if EMConfig.probOfApplySQLActionToCreateResources is 0.0, this method
      * would be same with [seeInitializingActions]
      */
-    fun seeDbActions() : List<DbAction> = seeActions(ActionFilter.ONLY_SQL) as List<DbAction>
+    fun seeDbActions() : List<SqlAction> = seeActions(ActionFilter.ONLY_SQL) as List<SqlAction>
+
+    fun seeMongoDbActions() : List<MongoDbAction> = seeActions(ActionFilter.ONLY_MONGO) as List<MongoDbAction>
 
     /**
      * return a list of all external service actions in [this] individual
@@ -152,7 +245,7 @@ abstract class EnterpriseIndividual(
     fun seeExternalServiceActions() : List<ApiExternalServiceAction> = seeActions(ActionFilter.ONLY_EXTERNAL_SERVICE) as List<ApiExternalServiceAction>
 
     override fun verifyInitializationActions(): Boolean {
-        return DbActionUtils.verifyActions(seeInitializingActions().filterIsInstance<DbAction>())
+        return SqlActionUtils.verifyActions(seeInitializingActions().filterIsInstance<SqlAction>())
     }
 
     override fun repairInitializationActions(randomness: Randomness) {
@@ -178,15 +271,15 @@ abstract class EnterpriseIndividual(
         if (!verifyInitializationActions()) {
             if (log.isTraceEnabled)
                 log.trace("invoke GeneUtils.repairBrokenDbActionsList")
-            val previous = dbInitialization.toMutableList()
-            DbActionUtils.repairBrokenDbActionsList(previous, randomness)
+            val previous = sqlInitialization.toMutableList()
+            SqlActionUtils.repairBrokenDbActionsList(previous, randomness)
             resetInitializingActions(previous)
             Lazy.assert{verifyInitializationActions()}
         }
     }
 
     override fun hasAnyAction(): Boolean {
-        return super.hasAnyAction() || dbInitialization.isNotEmpty()
+        return super.hasAnyAction() || sqlInitialization.isNotEmpty()
     }
 
     override fun size() = seeMainExecutableActions().size
@@ -194,8 +287,20 @@ abstract class EnterpriseIndividual(
     private fun getLastIndexOfDbActionToAdd(): Int =
         groupsView()!!.endIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_SQL)
 
+    private fun getLastIndexOfMongoDbActionToAdd(): Int =
+        groupsView()!!.endIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_MONGO)
+
+    private fun getLastIndexOfHostnameResolutionActionToAdd(): Int =
+        groupsView()!!.endIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_DNS)
+
     private fun getFirstIndexOfDbActionToAdd(): Int =
         groupsView()!!.startIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_SQL)
+
+    private fun getFirstIndexOfMongoDbActionToAdd(): Int =
+        groupsView()!!.startIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_MONGO)
+
+    private fun getFirstIndexOfHostnameResolutionActionToAdd(): Int =
+        groupsView()!!.startIndexForGroupInsertionInclusive(GroupsOfChildren.INITIALIZATION_DNS)
 
     /**
      * add [actions] at [relativePosition]
@@ -209,23 +314,46 @@ abstract class EnterpriseIndividual(
         }
     }
 
-    private fun resetInitializingActions(actions: List<DbAction>){
-        killChildren { it is DbAction }
+    fun addInitializingMongoDbActions(relativePosition: Int=-1, actions: List<Action>){
+        if (relativePosition < 0)  {
+            addChildrenToGroup(getLastIndexOfMongoDbActionToAdd(), actions, GroupsOfChildren.INITIALIZATION_MONGO)
+        } else{
+            addChildrenToGroup(getFirstIndexOfMongoDbActionToAdd()+relativePosition, actions, GroupsOfChildren.INITIALIZATION_MONGO)
+        }
+    }
+
+    fun addInitializingHostnameResolutionActions(relativePosition: Int=-1, actions: List<Action>) {
+        if (relativePosition < 0) {
+            addChildrenToGroup(getLastIndexOfHostnameResolutionActionToAdd(), actions, GroupsOfChildren.INITIALIZATION_DNS)
+        } else {
+            addChildrenToGroup(getFirstIndexOfHostnameResolutionActionToAdd()+relativePosition, actions, GroupsOfChildren.INITIALIZATION_DNS)
+        }
+    }
+
+    private fun resetInitializingActions(actions: List<SqlAction>){
+        killChildren { it is SqlAction }
         // TODO: Can be merged with DbAction later
         addChildrenToGroup(getLastIndexOfDbActionToAdd(), actions, GroupsOfChildren.INITIALIZATION_SQL)
     }
 
     /**
-     * remove specified dbactions i.e., [actions] from [dbInitialization]
+     * remove specified dbactions i.e., [actions] from [sqlInitialization]
      */
-    fun removeInitDbActions(actions: List<DbAction>) {
-        killChildren { it is DbAction && actions.contains(it)}
+    fun removeInitDbActions(actions: List<SqlAction>) {
+        killChildren { it is SqlAction && actions.contains(it)}
+    }
+
+    /***
+     * remove specified list of [HostnameResolutionAction] from the initializing actions.
+     */
+    fun removeHostnameResolutionAction(actions: List<HostnameResolutionAction>) {
+        killChildren {  it is HostnameResolutionAction && actions.contains(it) }
     }
 
     /**
      * @return a list table names which are used to insert data directly
      */
     open fun getInsertTableNames(): List<String>{
-        return dbInitialization.filterNot { it.representExistingData }.map { it.table.name }
+        return sqlInitialization.filterNot { it.representExistingData }.map { it.table.name }
     }
 }
