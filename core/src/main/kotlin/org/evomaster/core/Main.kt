@@ -4,27 +4,28 @@ import com.google.inject.Injector
 import com.google.inject.Key
 import com.google.inject.TypeLiteral
 import com.netflix.governator.guice.LifecycleInjector
+import org.evomaster.client.java.controller.api.EMTestUtils
 import org.evomaster.client.java.controller.api.dto.ControllerInfoDto
 import org.evomaster.client.java.instrumentation.shared.ObjectiveNaming
 import org.evomaster.core.AnsiColor.Companion.inBlue
 import org.evomaster.core.AnsiColor.Companion.inGreen
 import org.evomaster.core.AnsiColor.Companion.inRed
 import org.evomaster.core.AnsiColor.Companion.inYellow
+import org.evomaster.core.config.ConfigProblemException
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.OutputFormat
+import org.evomaster.core.output.Termination
 import org.evomaster.core.output.TestSuiteSplitter
 import org.evomaster.core.output.clustering.SplitResult
 import org.evomaster.core.output.service.TestSuiteWriter
+import org.evomaster.core.problem.api.ApiWsIndividual
 import org.evomaster.core.problem.externalservice.httpws.service.HarvestActualHttpWsResponseHandler
 import org.evomaster.core.problem.externalservice.httpws.service.HttpWsExternalServiceHandler
 import org.evomaster.core.problem.graphql.GraphQLIndividual
 import org.evomaster.core.problem.graphql.service.GraphQLBlackBoxModule
 import org.evomaster.core.problem.graphql.service.GraphQLModule
 import org.evomaster.core.problem.rest.RestIndividual
-import org.evomaster.core.problem.rest.service.BlackBoxRestModule
-import org.evomaster.core.problem.rest.service.ResourceDepManageService
-import org.evomaster.core.problem.rest.service.ResourceRestModule
-import org.evomaster.core.problem.rest.service.RestModule
+import org.evomaster.core.problem.rest.service.*
 import org.evomaster.core.problem.rpc.RPCIndividual
 import org.evomaster.core.problem.rpc.service.RPCModule
 import org.evomaster.core.problem.webfrontend.WebIndividual
@@ -42,6 +43,7 @@ import org.evomaster.core.search.service.*
 import org.evomaster.core.search.service.monitor.SearchProcessMonitor
 import org.evomaster.core.search.service.mutator.genemutation.ArchiveImpactSelector
 import java.lang.reflect.InvocationTargetException
+import kotlin.system.exitProcess
 
 
 /**
@@ -67,11 +69,13 @@ class Main {
 
                 /*
                     Before running anything, check if the input
-                    configurations are valid
+                    configurations are valid.
+                    Note: some setting might be evaluated later, eg, if they require
+                    to analyze the API schema.
                  */
                 val parser = try {
                     EMConfig.validateOptions(args)
-                } catch (e: Exception) {
+                } catch (e: ConfigProblemException) {
                     logError("Invalid parameter settings: " + e.message +
                             "\nUse --help to see the available options")
                     return
@@ -106,6 +110,10 @@ class Main {
                         logError("ERROR related to the system under test: ${cause.message}" +
                                 "\n  For white-box testing, look at the logs of the EvoMaster Driver to help debugging this problem.")
 
+                    is ConfigProblemException ->
+                        logError("Invalid parameter settings: ${cause.message}" +
+                                "\nUse --help to see the available options")
+
                     else ->
                         LoggingUtil.getInfoLogger().error(inRed("[ERROR] ") +
                                 inYellow("EvoMaster process terminated abruptly." +
@@ -113,6 +121,15 @@ class Main {
                                         " Please copy&paste the following stacktrace, and create a new issue on" +
                                         " " + inBlue("https://github.com/EMResearch/EvoMaster/issues")), e)
                 }
+
+                /*
+                    Need to signal error status.
+                    But this code can become problematic if reached by any test.
+                    Also in case of exceptions, must shutdown explicitely, otherwise running threads in
+                    the background might keep the JVM alive.
+                    See for example HarvestActualHttpWsResponseHandler
+                 */
+                exitProcess(1);
             }
         }
 
@@ -158,30 +175,16 @@ class Main {
             val config = injector.getInstance(EMConfig::class.java)
             val idMapper = injector.getInstance(IdMapper::class.java)
 
-            val solution = run(injector, controllerInfo)
-            val faults = solution.overall.potentialFoundFaults(idMapper)
+            var solution = run(injector, controllerInfo)
 
-            resetExternalServiceHandler(injector)
-
+            //save data regarding the search phase
             writeOverallProcessData(injector)
-
             writeDependencies(injector)
-
             writeImpacts(injector, solution)
-
-            //writeStatistics(injector, solution)
-
-            writeCoveredTargets(injector, solution)
-
-            writeTests(injector, solution, controllerInfo)
-
-            writeStatistics(injector, solution)
-
             writeExecuteInfo(injector)
 
+
             val stc = injector.getInstance(SearchTimeController::class.java)
-            val statistics = injector.getInstance(Statistics::class.java)
-            val data = statistics.getData(solution)
 
             LoggingUtil.getInfoLogger().apply {
                 info("Evaluated tests: ${stc.evaluatedIndividuals}")
@@ -191,12 +194,53 @@ class Main {
                 if (!config.avoidNonDeterministicLogs) {
                     info("Passed time (seconds): ${stc.getElapsedSeconds()}")
                     info("Execution time per test (ms): ${stc.averageTestTimeMs}")
+                    info("Execution time per action (ms): ${stc.averageActionTimeMs}")
                     info("Computation overhead between tests (ms): ${stc.averageOverheadMsBetweenTests}")
-                    val timeouts = data.find { p -> p.header == Statistics.TEST_TIMEOUTS }!!.element.toInt()
-                    if (timeouts > 0) {
-                        info("TCP timeouts: $timeouts")
+                    if(!config.blackBox){
+                        info("Computation overhead of resetting the SUT (ms): ${stc.averageResetSUTTimeMs}")
+                        //This one might be confusing, as based only on minimization phase...
+                        //info("Data transfer overhead of test results, per test, all targets (bytes): ${stc.averageByteOverheadTestResultsAll}")
+                        debug("Data transfer overhead of fetching test results, per test, subset of targets (bytes): ${stc.averageByteOverheadTestResultsSubset}")
+                        info("Computation overhead of fetching test results, per test, subset of targets (ms): ${stc.averageOverheadMsTestResultsSubset}")
                     }
                 }
+            }
+
+
+            if(config.security){
+                //apply security testing phase
+                LoggingUtil.getInfoLogger().info("Starting to apply security testing")
+
+                //TODO might need to reset stc, and print some updated info again
+
+                when(config.problemType){
+                    EMConfig.ProblemType.REST -> {
+                        val securityRest = injector.getInstance(SecurityRest::class.java)
+                        solution = securityRest.applySecurityPhase()
+                    }
+                    else ->{
+                        LoggingUtil.getInfoLogger().warn("Security phase currently not handled for problem type: ${config.problemType}")
+                    }
+                }
+            }
+
+            writeCoveredTargets(injector, solution)
+            writeTests(injector, solution, controllerInfo)
+            writeStatistics(injector, solution) //FIXME if other phases after search, might get skewed data on 100% snapshots...
+
+            val statistics = injector.getInstance(Statistics::class.java)
+            val data = statistics.getData(solution)
+            val faults = solution.overall.potentialFoundFaults(idMapper)
+            val sampler : Sampler<*> = injector.getInstance(Key.get(object : TypeLiteral<Sampler<*>>(){}))
+
+            LoggingUtil.getInfoLogger().apply {
+
+                val timeouts = data.find { p -> p.header == Statistics.TEST_TIMEOUTS }!!.element.toInt()
+                if (timeouts > 0) {
+                    info("TCP timeouts: $timeouts")
+                }
+
+                info("Potential faults: ${faults.size}")
 
                 if (!config.blackBox || config.bbExperiments) {
                     val rc = injector.getInstance(RemoteController::class.java)
@@ -211,9 +255,37 @@ class Main {
                         val totalLines = unitsInfo.numberOfLines
                         val percentage = String.format("%.0f", (linesInfo.total / totalLines.toDouble()) * 100)
 
+                        /*
+                            This is a quite tricky case...
+                            the number of covered lines X should be less or equal than the total T, ie X<=T.
+                            However, we end up with cases like X > T where T=0.
+                            Should never happen in practice, but it does for E2E tests.
+                            This is because we could have different test suites working on same SUTs.
+                            Once one is finished, it would reset all data.
+                            Such data would not then be recomputed in the next test suite execution, as
+                            the classes are already loaded...
+                            Not sure if there is any clean solution for this...
+                            executing these tests in own process might be done with Failsafe/Surefire.
+
+                            Having check for totalLines == 0 was not a good solution. If the assertion fails,
+                            and test is re-executed on same JVM with classes already loaded, then we would get
+                            totalLines == 0 after the reset... and so the test cases will always pass :(
+                         */
+                        //assert(totalLines == 0 || linesInfo.total <= totalLines){ "${linesInfo.total} > $totalLines"}
+                        /*
+                            Having this assertion is way too problematic... not only issue when more than 2 E2E use
+                            the same SUT, but also when flacky tests are re-run (both in our scaffolding, and in Maven)
+                         */
+                        //assert(linesInfo.total <= totalLines){ "WRONG COVERAGE: ${linesInfo.total} > $totalLines"}
+
                         info("Covered targets (lines, branches, faults, etc.): ${targetsInfo.total}")
-                        info("Potential faults: ${faults.size}")
-                        info("Bytecode line coverage: $percentage% (${linesInfo.total} out of $totalLines in $units units/classes)")
+
+                        if(totalLines == 0 || units == 0){
+                            logError("Detected $totalLines lines to cover, for a total of $units units/classes." +
+                                    " Are you sure you did setup getPackagePrefixesToCover() correctly?")
+                        } else {
+                            info("Bytecode line coverage: $percentage% (${linesInfo.total} out of $totalLines in $units units/classes)")
+                        }
                     } else {
                         warn("Failed to retrieve SUT info")
                     }
@@ -224,8 +296,18 @@ class Main {
                 when(config.problemType){
                     EMConfig.ProblemType.REST -> {
                         val k = data.find { it.header == Statistics.COVERED_2XX }!!.element.toInt()
-                        val p = String.format("%.0f", (k.toDouble()/n) * 100 )
-                        info("Successfully executed (HTTP code 2xx) $k endpoints out of $n ($p%)")
+                        val t = if (sampler.getPreDefinedIndividuals().isNotEmpty()) {
+                            /*
+                                FIXME this is a temporary hack...
+                                right now we might have 1 call to Schema that messes up this statistics
+                             */
+                            n + 1
+                        } else {
+                            n
+                        }
+                        assert(k <= t)
+                        val p = String.format("%.0f", (k.toDouble()/t) * 100 )
+                        info("Successfully executed (HTTP code 2xx) $k endpoints out of $t ($p%)")
                     }
                     EMConfig.ProblemType.GRAPHQL ->{
                         val k = data.find { it.header == Statistics.GQL_NO_ERRORS }!!.element.toInt()
@@ -238,10 +320,16 @@ class Main {
 
                 if (config.stoppingCriterion == EMConfig.StoppingCriterion.TIME &&
                         config.maxTime == config.defaultMaxTime) {
-                    info(inGreen("To obtain better results, use the '--maxTime' option" +
-                            " to run the search for longer"))
+                    warn(inGreen("You are using the default time budget '${config.defaultMaxTime}'." +
+                            " This is only for demo purposes. " +
+                            " You should increase such test budget." +
+                            " To obtain better results, use the '--maxTime' option" +
+                            " to run the search for longer, like for example something between '1h' and '24h' hours."))
                 }
             }
+
+            resetExternalServiceHandler(injector)
+
             solution.statistics = data.toMutableList()
             return solution
         }
@@ -477,7 +565,7 @@ class Main {
                                          snapshotTimestamp: String ->
                 writeTestsAsSnapshots(injector, solution, controllerInfo, snapshotTimestamp)
             }.also {
-                if (config.doHarvestActualResponse()){
+                if (config.isEnabledHarvestingActualResponse()){
                     val hp = injector.getInstance(HarvestActualHttpWsResponseHandler::class.java)
                     hp.shutdown()
                 }
@@ -608,14 +696,31 @@ class Main {
                 val splitResult = TestSuiteSplitter.split(solution, config, writer.getPartialOracles())
 
                 solution.clusteringTime = splitResult.clusteringTime.toInt()
-                splitResult.splitOutcome.filter { !it.individuals.isNullOrEmpty() }
-                        .forEach { writer.writeTests(it, controllerInfoDto?.fullName,controllerInfoDto?.executableFullPath, snapshot) }
+                splitResult.splitOutcome
+                    .filter { !it.individuals.isNullOrEmpty() }
+                    .flatMap {
+                        TestSuiteSplitter.splitSolutionByLimitSize(
+                            it as Solution<ApiWsIndividual>,
+                            config.maxTestsPerTestSuite
+                        )
+                    }
+                    .forEach { writer.writeTests(it, controllerInfoDto?.fullName,controllerInfoDto?.executableFullPath, snapshot) }
 
                 if (config.executiveSummary) {
-                    writeExecSummary(injector, controllerInfoDto, splitResult)
+
+                    // Onur - if there are fault cases, executive summary makes sense
+                    if ( splitResult.splitOutcome.any{ it.individuals.isNotEmpty()
+                                && it.termination != Termination.SUCCESSES}) {
+                        writeExecSummary(injector, controllerInfoDto, splitResult)
+                    }
+
+                    //writeExecSummary(injector, controllerInfoDto, splitResult)
                     //writeExecutiveSummary(injector, solution, controllerInfoDto, partialOracles)
                 }
             } else if (config.problemType == EMConfig.ProblemType.RPC){
+
+                // Man: only enable for RPC as it lacks of unit tests
+                writer.writeTestsDuringSeeding(solution, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath)
 
                 when(config.testSuiteSplitType){
                     EMConfig.TestSuiteSplitType.NONE -> writer.writeTests(solution, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath)
@@ -626,7 +731,14 @@ class Main {
                      */
                     EMConfig.TestSuiteSplitType.CLUSTER -> {
                         val splitResult = TestSuiteSplitter.splitRPCByException(solution as Solution<RPCIndividual>)
-                        splitResult.splitOutcome.filter { !it.individuals.isNullOrEmpty() }
+                        splitResult.splitOutcome
+                            .filter { !it.individuals.isNullOrEmpty() }
+                            .flatMap {
+                                TestSuiteSplitter.splitSolutionByLimitSize(
+                                    it as Solution<ApiWsIndividual>,
+                                    config.maxTestsPerTestSuite
+                                )
+                            }
                             .forEach { writer.writeTests(it, controllerInfoDto?.fullName,controllerInfoDto?.executableFullPath, snapshot) }
 
                         // disable executiveSummary
@@ -644,8 +756,15 @@ class Main {
                     else -> {
                         //throw IllegalStateException("GraphQL problem does not support splitting tests by code at this time")
                         val splitResult = TestSuiteSplitter.split(solution, config)
-                        splitResult.splitOutcome.filter{ !it.individuals.isNullOrEmpty() }
-                                .forEach { writer.writeTests(it, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath, snapshot ) }
+                        splitResult.splitOutcome
+                            .filter{ !it.individuals.isNullOrEmpty() }
+                            .flatMap {
+                                TestSuiteSplitter.splitSolutionByLimitSize(
+                                    it as Solution<ApiWsIndividual>,
+                                    config.maxTestsPerTestSuite
+                                )
+                            }
+                            .forEach { writer.writeTests(it, controllerInfoDto?.fullName, controllerInfoDto?.executableFullPath, snapshot ) }
                     }
                     /*
                       GraphQL could be split by code (where code is available and trustworthy)

@@ -11,6 +11,7 @@ import org.evomaster.client.java.instrumentation.staticstate.UnitsInfoRecorder;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -56,6 +57,11 @@ public abstract class EmbeddedSutController extends SutController {
     }
 
     @Override
+    public final List<TargetInfo> getAllCoveredTargetInfos(){
+        return InstrumentationController.getAllCoveredTargetInfos();
+    }
+
+    @Override
     public final List<AdditionalInfo> getAdditionalInfoList(){
         return InstrumentationController.getAdditionalInfoList();
     }
@@ -66,7 +72,7 @@ public abstract class EmbeddedSutController extends SutController {
                 dto.index,
                 dto.name,
                 dto.inputVariables,
-                dto.externalServiceMapping,
+                dto.externalServiceMapping.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> new ExternalServiceMapping(e.getValue().remoteHostname, e.getValue().localIPAddress, e.getValue().signature, e.getValue().isActive))),
                 dto.localAddressMapping,
                 dto.skippedExternalServices.stream().map(e -> new ExternalService(e.hostname, e.port)).collect(Collectors.toList())
         ));
@@ -85,6 +91,11 @@ public abstract class EmbeddedSutController extends SutController {
     @Override
     public final void setExecutingInitSql(boolean executingInitSql) {
         ExecutionTracer.setExecutingInitSql(executingInitSql);
+    }
+
+    @Override
+    public final void setExecutingInitMongo(boolean executingInitMongo) {
+        ExecutionTracer.setExecutingInitMongo(executingInitMongo);
     }
 
     @Override

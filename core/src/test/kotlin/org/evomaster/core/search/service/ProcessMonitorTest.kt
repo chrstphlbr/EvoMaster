@@ -50,7 +50,7 @@ class ProcessMonitorTest{
         config.stoppingCriterion = EMConfig.StoppingCriterion.FITNESS_EVALUATIONS
         config.processFormat = EMConfig.ProcessDataFormat.JSON_ALL
         config.useTimeInFeedbackSampling = false
-
+        config.minimize = false
     }
 
 
@@ -144,13 +144,16 @@ class ProcessMonitorTest{
 //            assertEquals(individual.seeGenes().size, evalIndividual.individual.seeGenes().size)
             assertEquals(evalIndividual.fitness.coveredTargets(), evalIndividual.fitness.coveredTargets())
             evalIndividual.fitness.getViewOfData().forEach { (t, u) ->
-                assertEquals(evalIndividual.fitness.getHeuristic(t) , u.distance)
+                assertEquals(evalIndividual.fitness.getHeuristic(t) , u.score)
             }
         }
     }
 
     @Test
     fun testSerializedTwoStepsAndOverall(){
+
+        assertTrue(archive.isEmpty())
+
         config.processFiles = "target/process_data_2s"
 
         config.enableProcessMonitor = true
@@ -172,7 +175,6 @@ class ProcessMonitorTest{
 
         val addedA = archive.addIfNeeded(evalA)
         assert(addedA)
-
 
         assertEquals(1, archive.getSnapshotOfBestIndividuals().size)
         val b = OneMaxIndividual(2)

@@ -1,8 +1,8 @@
 package org.evomaster.core.problem.api
 
-import org.evomaster.core.problem.api.auth.AuthenticationInfo
+import org.evomaster.core.problem.enterprise.auth.AuthenticationInfo
 import org.evomaster.core.problem.api.param.Param
-import org.evomaster.core.search.Action
+import org.evomaster.core.search.action.Action
 
 /**
  * an action for handling API
@@ -24,4 +24,12 @@ abstract class ApiWsAction(
     fun addParam(param: Param){
         addChild(param)
     }
+
+    /**
+     * In some very special cases, we want to skip creating assertions on response bodies from the API
+     */
+    open fun shouldSkipAssertionsOnResponseBody() : Boolean{
+        return false
+    }
+
 }

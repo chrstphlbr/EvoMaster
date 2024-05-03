@@ -12,10 +12,12 @@ import org.evomaster.core.remote.service.RemoteController
 import org.evomaster.core.remote.service.RemoteControllerImplementation
 import org.evomaster.core.search.service.Archive
 import org.evomaster.core.search.service.FitnessFunction
+import org.evomaster.core.search.service.Minimizer
 import org.evomaster.core.search.service.Sampler
 import org.evomaster.core.search.service.mutator.Mutator
 import org.evomaster.core.search.service.mutator.StandardMutator
 import org.evomaster.core.search.service.mutator.StructureMutator
+import org.evomaster.core.seeding.service.rest.PirToRest
 
 
 class ResourceRestModule(private val bindRemote : Boolean = true) : AbstractModule(){
@@ -43,6 +45,10 @@ class ResourceRestModule(private val bindRemote : Boolean = true) : AbstractModu
                 .to(ResourceSampler::class.java)
                 .asEagerSingleton()
 
+        bind(AbstractRestSampler::class.java)
+                .to(ResourceSampler::class.java)
+                .asEagerSingleton()
+
         bind(ResourceSampler::class.java)
                 .asEagerSingleton()
 
@@ -50,8 +56,18 @@ class ResourceRestModule(private val bindRemote : Boolean = true) : AbstractModu
                 .to(RestResourceFitness::class.java)
                 .asEagerSingleton()
 
-        bind(object : TypeLiteral<AbstractRestFitness<RestIndividual>>() {})
+        bind(object : TypeLiteral<FitnessFunction<*>>() {})
                 .to(RestResourceFitness::class.java)
+                .asEagerSingleton()
+
+        bind(object : TypeLiteral<AbstractRestFitness>() {})
+                .to(RestResourceFitness::class.java)
+                .asEagerSingleton()
+
+        bind(object : TypeLiteral<Minimizer<RestIndividual>>(){})
+                .asEagerSingleton()
+
+        bind(object : TypeLiteral<Minimizer<*>>(){})
                 .asEagerSingleton()
 
         bind(object : TypeLiteral<Archive<RestIndividual>>() {})
@@ -92,6 +108,12 @@ class ResourceRestModule(private val bindRemote : Boolean = true) : AbstractModu
                 .asEagerSingleton()
 
         bind(HarvestActualHttpWsResponseHandler::class.java)
+            .asEagerSingleton()
+
+        bind(SecurityRest::class.java)
+            .asEagerSingleton()
+
+        bind(PirToRest::class.java)
             .asEagerSingleton()
 
     }

@@ -4,16 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thrift.example.artificial.*;
 import org.evomaster.client.java.controller.EmbeddedSutController;
-import org.evomaster.client.java.controller.api.dto.AuthenticationDto;
-import org.evomaster.client.java.controller.api.dto.LocalAuthenticationDto;
+import org.evomaster.client.java.controller.api.dto.auth.AuthenticationDto;
+import org.evomaster.client.java.controller.api.dto.auth.LocalAuthenticationDto;
 import org.evomaster.client.java.controller.api.dto.SutInfoDto;
 import org.evomaster.client.java.controller.api.dto.problem.rpc.MockRPCExternalServiceDto;
 import org.evomaster.client.java.controller.api.dto.problem.rpc.SeededRPCActionDto;
 import org.evomaster.client.java.controller.api.dto.problem.rpc.SeededRPCTestDto;
-import org.evomaster.client.java.controller.internal.db.DbSpecification;
+import org.evomaster.client.java.sql.DbSpecification;
 import org.evomaster.client.java.controller.problem.ProblemInfo;
 import org.evomaster.client.java.controller.problem.RPCProblem;
-import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
@@ -81,7 +80,7 @@ public class FakeSutController extends EmbeddedSutController {
 
     @Override
     public SutInfoDto.OutputFormat getPreferredOutputFormat() {
-        return null;
+        return SutInfoDto.OutputFormat.JAVA_JUNIT_5;
     }
 
     @Override
@@ -93,9 +92,11 @@ public class FakeSutController extends EmbeddedSutController {
 
     @Override
     public List<SeededRPCTestDto> seedRPCTests() {
-        String mockedResponse;
+        String mockedResponse_test1;
+        String seed_requests_test3;
         try {
-            mockedResponse = objectMapper.writeValueAsString(TestData.NESTED_STRING_GENERIC_DTO);
+            mockedResponse_test1 = objectMapper.writeValueAsString(TestData.NESTED_STRING_GENERIC_DTO);
+            seed_requests_test3 = objectMapper.writeValueAsString(TestData.NESTED_GENERIC_DTO);
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
@@ -113,7 +114,7 @@ public class FakeSutController extends EmbeddedSutController {
                                             this.appKey = "seedcheck.fake.mock.appkey";
                                             this.interfaceFullName = "seedcheck.fake.mock.interfaceName";
                                             this.responseTypes = Arrays.asList(NestedStringGenericDto.class.getName());
-                                            this.responses= Arrays.asList(mockedResponse);
+                                            this.responses= Arrays.asList(mockedResponse_test1);
 
                                         }}
                                 );
@@ -129,6 +130,17 @@ public class FakeSutController extends EmbeddedSutController {
                                 inputParams= Arrays.asList("null","null","null","null","null");
                                 inputParamTypes= Arrays.asList(List.class.getName(),List.class.getName(),List.class.getName(), Map.class.getName(), BigNumberObj.class.getName());
                             }}
+                    );
+                }},
+                new SeededRPCTestDto(){{
+                    testName = "test_3";
+                    rpcFunctions = Arrays.asList(
+                        new SeededRPCActionDto(){{
+                            interfaceName = RPCInterfaceExample.class.getName();
+                            functionName = "handleNestedGenericString";
+                            inputParams= Arrays.asList(seed_requests_test3);
+                            inputParamTypes= Arrays.asList(NestedGenericDto.class.getName());
+                        }}
                     );
                 }}
 

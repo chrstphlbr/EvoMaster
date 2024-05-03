@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.evomaster</groupId>
         <artifactId>evomaster-client-java</artifactId>
-        <version>1.6.1</version>
+        <version>3.0.0</version>
     </parent>
 
     <artifactId>evomaster-client-java-instrumentation</artifactId>
@@ -13,6 +13,10 @@
 
 
     <dependencies>
+        <dependency>
+            <groupId>org.evomaster</groupId>
+            <artifactId>evomaster-client-java-distance-heuristics</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.evomaster</groupId>
             <artifactId>evomaster-client-java-util</artifactId>
@@ -144,6 +148,16 @@
             <artifactId>guava</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
 
@@ -196,8 +210,8 @@
                                     <shadedPattern>shaded.dk.brics.automaton</shadedPattern>
                                 </relocation>
                                 <relocation>
-                                    <pattern>com.github.jsqlparser</pattern>
-                                    <shadedPattern>shaded.com.github.jsqlparser</shadedPattern>
+                                    <pattern>net.sf.jsqlparser</pattern>
+                                    <shadedPattern>shaded.net.sf.jsqlparser</shadedPattern>
                                 </relocation>
                             </relocations>
                         </configuration>

@@ -19,18 +19,15 @@ import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import org.evomaster.client.java.controller.api.dto.*
 import org.evomaster.client.java.controller.api.dto.database.execution.ExecutionDto
-import org.evomaster.client.java.controller.api.dto.database.operations.DataRowDto
-import org.evomaster.client.java.controller.api.dto.database.operations.DatabaseCommandDto
-import org.evomaster.client.java.controller.api.dto.database.operations.InsertionResultsDto
-import org.evomaster.client.java.controller.api.dto.database.operations.QueryResultDto
+import org.evomaster.client.java.controller.api.dto.database.operations.*
 import org.evomaster.client.java.controller.api.dto.problem.RestProblemDto
-import org.evomaster.client.java.controller.db.SqlScriptRunner
-import org.evomaster.client.java.controller.internal.db.SchemaExtractor
+import org.evomaster.client.java.sql.SqlScriptRunner
+import org.evomaster.client.java.sql.SchemaExtractor
 import org.evomaster.core.BaseModule
 import org.evomaster.core.EMConfig
-import org.evomaster.core.database.DbAction
-import org.evomaster.core.database.SqlInsertBuilder
-import org.evomaster.core.database.schema.ColumnDataType
+import org.evomaster.core.sql.SqlAction
+import org.evomaster.core.sql.SqlInsertBuilder
+import org.evomaster.core.sql.schema.ColumnDataType
 import org.evomaster.core.problem.rest.RestCallAction
 import org.evomaster.core.problem.rest.RestIndividual
 import org.evomaster.core.problem.rest.resource.RestResourceCalls
@@ -48,7 +45,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
@@ -155,8 +151,9 @@ abstract class RestIndividualTestBase {
             return range.map {r-> budget.map { Arguments.of(it, r) } }.flatten().stream()
         }
 
+        @JvmStatic
         @AfterAll
-        fun clean(){
+        fun clean(): Unit {
             mockServer.close()
         }
     }
@@ -178,7 +175,7 @@ abstract class RestIndividualTestBase {
 
     abstract fun getSampler() : AbstractRestSampler
     abstract fun getMutator() : StandardMutator<RestIndividual>
-    abstract fun getFitnessFunction() : AbstractRestFitness<RestIndividual>
+    abstract fun getFitnessFunction() : AbstractRestFitness
 
     @ParameterizedTest
     @MethodSource("getBudgetAndNumOfResourceForSampler")
@@ -193,7 +190,7 @@ abstract class RestIndividualTestBase {
             if (ind.seeDbActions().isNotEmpty()){
                 // all db actions should be before rest actions
                 ind.getResourceCalls().forEach { r->
-                    val dbIndexes = r.getIndexedChildren(DbAction::class.java).keys
+                    val dbIndexes = r.getIndexedChildren(SqlAction::class.java).keys
                     val restIndexes = r.getIndexedChildren(RestCallAction::class.java).keys
                     assertTrue(restIndexes.all {
                         it > (dbIndexes.maxOrNull() ?: -1)
@@ -234,7 +231,7 @@ abstract class RestIndividualTestBase {
     private fun checkActionIndex(mutated: RestIndividual){
         assertEquals(0, mutated.getIndexedChildren(RestCallAction::class.java).size)
 
-        val indexedDb = mutated.getIndexedChildren(DbAction::class.java)
+        val indexedDb = mutated.getIndexedChildren(SqlAction::class.java)
         val indexedRest = mutated.getIndexedChildren(RestResourceCalls::class.java)
 
         val dbBeforeRest = indexedRest.keys.all { it > (indexedDb.keys.maxOrNull() ?: -1) }
@@ -591,7 +588,7 @@ abstract class RestIndividualTestBase {
             return true
         }
 
-        override fun getTestResults(ids: Set<Int>, ignoreKillSwitch: Boolean): TestResultsDto? {
+        override fun getTestResults(ids: Set<Int>, ignoreKillSwitch: Boolean, allCovered: Boolean): TestResultsDto? {
             assertNotNull(sqlInsertBuilder)
             newEvaluation()
             val result = TestResultsDto().apply {
@@ -604,7 +601,8 @@ abstract class RestIndividualTestBase {
                 extraHeuristics = (0 until executedActionCounter).map {
                     ExtraHeuristicsDto().apply {
                         if (employFakeDbHeuristicResult && randomness.nextBoolean()){
-                            databaseExecutionDto = ExecutionDto().apply {
+                            databaseExecutionDto = org.evomaster.client.java.controller.api.dto.database.execution.ExecutionDto()
+                                .apply {
                                 val table = randomness.choose( sqlInsertBuilder!!.getTableNames())
                                 val failed = randomness.choose(sqlInsertBuilder!!.getTable(table,true).columns.map { it.name })
                                 failedWhere = mapOf(table to setOf(failed))
@@ -660,6 +658,10 @@ abstract class RestIndividualTestBase {
         }
 
         override fun executeDatabaseInsertionsAndGetIdMapping(dto: DatabaseCommandDto): InsertionResultsDto? {
+            return null
+        }
+
+        override fun executeMongoDatabaseInsertions(dto: MongoDatabaseCommandDto): MongoInsertionResultsDto? {
             return null
         }
 

@@ -6,6 +6,7 @@ import org.evomaster.core.search.gene.datetime.DateGene
 import org.evomaster.core.search.gene.datetime.DateTimeGene
 import org.evomaster.core.search.gene.datetime.TimeGene
 import org.evomaster.core.search.gene.interfaces.ComparableGene
+import org.evomaster.core.search.gene.mongo.ObjectIdGene
 import org.evomaster.core.search.gene.regex.*
 import org.evomaster.core.search.gene.sql.*
 import org.evomaster.core.search.gene.sql.geometric.*
@@ -169,6 +170,9 @@ object GeneSamplerForTests {
             UrlHttpGene::class -> sampleUrlHttpGene(rand) as T
             UriDataGene::class -> sampleUrlDataGene(rand) as T
 
+            // Mongo genes
+            ObjectIdGene::class -> sampleMongoObjectIdGene(rand) as T
+
             else -> throw IllegalStateException("No sampler for $klass")
         }
     }
@@ -291,7 +295,11 @@ object GeneSamplerForTests {
                 numberOfOctets = rand.nextInt(1, MAX_NUMBER_OF_OCTETS))
     }
 
-    const val MAX_NUMBER_OF_DIMENSIONS = 5
+    /*
+        reduce the number from 5 to 3
+        a larger number can lead to insane quantity of genes, even hundreds of thousands
+     */
+    const val MAX_NUMBER_OF_DIMENSIONS = 3 //5
     const val MAX_NUMBER_OF_OCTETS = 10
     const val MAX_NUMBER_OF_FIELDS = 3
 
@@ -377,6 +385,10 @@ object GeneSamplerForTests {
 
     private fun sampleSqlJSONPathGene(rand: Randomness): SqlJSONPathGene {
         return SqlJSONPathGene("rand JSONPathGene ${rand.nextInt()}")
+    }
+
+    private fun sampleMongoObjectIdGene(rand: Randomness): ObjectIdGene {
+        return ObjectIdGene("rand ObjectIdGene ${rand.nextInt()}")
     }
 
     fun sampleRegexGene(rand: Randomness): RegexGene {
@@ -527,7 +539,7 @@ object GeneSamplerForTests {
         val valueTemplate = samplePrintableTemplate(selection, rand)
         return FlexibleGene(valueTemplate.name, valueTemplate, null)
     }
-    
+
     fun sampleOptionalGene(rand: Randomness): OptionalGene {
 
         val selection = geneClasses.filter { !it.isAbstract }

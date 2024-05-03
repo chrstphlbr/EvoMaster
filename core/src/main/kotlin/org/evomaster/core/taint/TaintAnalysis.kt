@@ -5,11 +5,11 @@ import org.evomaster.client.java.instrumentation.shared.StringSpecialization
 import org.evomaster.client.java.instrumentation.shared.StringSpecializationInfo
 import org.evomaster.client.java.instrumentation.shared.TaintInputName
 import org.evomaster.client.java.instrumentation.shared.TaintType
-import org.evomaster.core.database.DbAction
+import org.evomaster.core.sql.SqlAction
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.problem.rest.RestActionBuilderV3
 import org.evomaster.core.problem.rest.RestCallAction
-import org.evomaster.core.search.Action
+import org.evomaster.core.search.action.Action
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.gene.collection.*
 import org.evomaster.core.search.gene.interfaces.TaintableGene
@@ -51,7 +51,7 @@ object TaintAnalysis {
         if (log.isTraceEnabled) {
             log.trace("do taint analysis for individual which contains dbactions: {} and rest actions: {}",
                     individual.seeInitializingActions().joinToString(",") {
-                        if (it is DbAction) it.getResolvedName() else it.getName()
+                        if (it is SqlAction) it.getResolvedName() else it.getName()
                     },
                     individual.seeAllActions().joinToString(",") {
                         if (it is RestCallAction) it.resolvedPath() else it.getName()
@@ -74,9 +74,12 @@ object TaintAnalysis {
     "Likely" rare, and "likely" with little to no side-effects if it happens (we ll see if it ll be indeed
     the case).
 
-    Note, even if we force the invariant that 2 genes cannot share the same taint in a individual, we cannot guarantee
+    Note, even if we force the invariant that 2 genes cannot share the same taint in an individual, we cannot guarantee
     of the taint values detected in the SUT. The string there might be manipulated (although it is _extremely_ unlike
-    that a manipulated taint would still pass the taint regex check...)
+    that a manipulated taint would still pass the taint regex check...).
+
+    TODO: if we want to fix this, also need to keep in mind how taint is handled in SQL.
+    Currently, embedded and external behaves differently. See HeuristicsCalculator
          */
 
         val allTaintableGenes: List<TaintableGene> =
@@ -155,7 +158,7 @@ object TaintAnalysis {
                 val schema = s.value
                 val t = schema.subSequence(0, schema.indexOf(":")).trim().toString()
                 val ref = t.subSequence(1, t.length - 1).toString()
-                RestActionBuilderV3.createObjectGenesForDTOs(ref, schema, enableConstraintHandling = enableConstraintHandling )
+                RestActionBuilderV3.createGeneForDTO(ref, schema, RestActionBuilderV3.Options(enableConstraintHandling=enableConstraintHandling) )
             } else {
                 /*
                     TODO this could be more sophisticated, like considering numeric and boolean arrays as well,

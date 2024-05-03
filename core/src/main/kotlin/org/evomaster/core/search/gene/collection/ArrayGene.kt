@@ -137,6 +137,8 @@ class ArrayGene<T>(
             throw IllegalArgumentException("Invalid gene type ${other.javaClass}")
         }
 
+        if (this.template::class.simpleName != other.template::class.simpleName) return false
+
         return updateValueOnlyIfValid(
             {
                 killAllChildren()
@@ -155,6 +157,8 @@ class ArrayGene<T>(
         if (other !is ArrayGene<*>) {
             throw IllegalArgumentException("Invalid gene type ${other.javaClass}")
         }
+        if (this.template::class.simpleName != other.template::class.simpleName) return false
+
         return this.elements.zip(other.elements) { thisElem, otherElem ->
             thisElem.containsSameValueAs(otherElem)
         }.all { it }
@@ -231,9 +235,7 @@ class ArrayGene<T>(
             addElement(gene)
         }else{
             log.trace("Removing gene in mutation")
-            val removed = killChildByIndex(randomness.nextInt(elements.size)) as T
-            // remove binding if any other bound with
-            removed.removeThisFromItsBindingGenes()
+            killChildByIndex(randomness.nextInt(elements.size)) as T
         }
         return true
     }
@@ -300,7 +302,6 @@ class ArrayGene<T>(
         //this is a reference heap check, not based on `equalsTo`
         if (elements.contains(element)){
             killChild(element)
-            element.removeThisFromItsBindingGenes()
         }else{
             log.warn("the specified element (${if (element.isPrintable()) element.getValueAsPrintableString() else "not printable"})) does not exist in this array")
         }
