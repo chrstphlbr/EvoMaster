@@ -506,10 +506,12 @@ class Main {
         fun run(injector: Injector, controllerInfo: ControllerInfoDto?): Solution<*> {
 
             val config = injector.getInstance(EMConfig::class.java)
-            val rc = injector.getInstance(RemoteController::class.java)
-
-            if (!config.blackBox || config.bbExperiments) {
+            val rc = if (!config.blackBox || config.bbExperiments) {
+                val rc = injector.getInstance(RemoteController::class.java)
                 rc.startANewSearch()
+                rc
+            } else {
+                null
             }
 
             val key = when (config.problemType) {
@@ -536,7 +538,7 @@ class Main {
 
             LoggingUtil.getInfoLogger().info("Finished generating test cases")
 
-            rc.resetSUT()
+            rc?.resetSUT()
 
             return solutions
         }
